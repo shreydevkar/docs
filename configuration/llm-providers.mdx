@@ -1,0 +1,72 @@
+---
+title: "Configure LLM providers in GridOS settings"
+description: "Connect Google Gemini, Anthropic Claude, Groq, or OpenRouter to GridOS using the in-app settings panel or a .env file. You need at least one key."
+---
+
+GridOS is bring-your-own-key: it does not bundle any API credentials. Before the AI agent can edit your workbook, you must connect at least one of the four supported providers. You can add as many providers as you like — the model picker in the chat composer lists every model whose provider has a valid key configured.
+
+## Supported providers
+
+<CardGroup cols={2}>
+  <Card title="Google Gemini" icon="google">
+    Free tier available at [Google AI Studio](https://aistudio.google.com/app/apikey). Gemini Flash Lite is the recommended daily driver for its speed and generous free quota.
+  </Card>
+  <Card title="Anthropic Claude" icon="a">
+    $5 in starter credits at the [Anthropic Console](https://console.anthropic.com/). Strong JSON reliability makes Claude models a good choice for complex financial models.
+  </Card>
+  <Card title="Groq" icon="bolt">
+    Genuinely free with no credit card required — sign up at [console.groq.com](https://console.groq.com). GPT-OSS 20B runs at ~1000 tokens per second. **Recommended for development.**
+  </Card>
+  <Card title="OpenRouter" icon="share-nodes">
+    Free models with rate limits at [openrouter.ai](https://openrouter.ai). Good fallback option. The `openrouter/free` meta-router picks a working free model automatically.
+  </Card>
+</CardGroup>
+
+## Two ways to configure keys
+
+### Option 1: In-app settings panel (recommended)
+
+<Steps>
+  <Step title="Open Settings">
+    Click the gear icon in the GridOS menubar to open the Settings panel.
+  </Step>
+  <Step title="Paste your API key">
+    Find the provider you want to configure, paste your key into the input field, and save.
+  </Step>
+  <Step title="Confirm the model picker updates">
+    Close Settings. The model picker dropdown in the chat composer now lists models for that provider. You are ready to chat.
+  </Step>
+</Steps>
+
+Keys saved through the settings panel are stored in `data/api_keys.json`, which is gitignored. They persist across server restarts and are never committed to version control.
+
+### Option 2: `.env` file
+
+Create a `.env` file in the repository root before starting the server:
+
+```bash
+GOOGLE_API_KEY=your_gemini_key
+ANTHROPIC_API_KEY=your_claude_key
+GROQ_API_KEY=your_groq_key
+OPENROUTER_API_KEY=your_openrouter_key
+```
+
+The `.env` file acts as a fallback: GridOS reads it at startup for any provider that does not already have a key saved in `data/api_keys.json`. If a key exists in both places, the in-app value takes precedence.
+
+<Note>
+  You only need to provide keys for the providers you intend to use. Leave the rest blank or omit them entirely.
+</Note>
+
+## Using multiple providers at once
+
+You can configure all four providers simultaneously. GridOS initialises a client for each key and makes them all available at the same time. Use the model picker in the chat composer to choose a specific model — or switch mid-session without restarting the server.
+
+<Tip>
+  Start with Groq for free, fast iteration. Add a Gemini key for its generous free tier when you need higher quality on complex sheets. Anthropic Claude is the best option for strict JSON reliability on large multi-section financial models.
+</Tip>
+
+## What happens when a key is invalid
+
+If the provider rejects your API key, GridOS returns a `401` error and surfaces the message **"The API key for this model was rejected."** Open Settings (gear icon), update the key for that provider, and try again.
+
+Provider errors are isolated: a bad key for one provider does not block the others. If your Groq key is invalid but your Gemini key is valid, Gemini models continue to work normally.

@@ -1,0 +1,132 @@
+---
+title: "POST /agent/chat — send a prompt to the AI agent"
+description: "Send a natural-language prompt to the GridOS AI agent. Returns a preview of proposed cell writes for you to review before committing them."
+---
+
+Use this endpoint to send a natural-language instruction to the GridOS AI agent. The agent reads the current sheet state, routes your request to the most appropriate specialist (for example, the finance agent or the general agent), and returns a **preview** of the cells it wants to write. Nothing is written to the sheet until you explicitly call `POST /agent/apply`. Use the `scope` and `selected_cells` fields to constrain the agent to a particular region of the sheet.
+
+## Request
+
+<ParamField body="prompt" type="string" required>
+  The natural-language instruction for the agent. For example: `"Build a quarterly revenue forecast with 10% QoQ growth starting from 100 in B3"`.
+</ParamField>
+
+<ParamField body="history" type="array">
+  Prior conversation turns, ordered oldest-first. Each element must have a `role` field (`"user"` or `"assistant"`) and a `content` field (string). Pass the full history on follow-up turns so the agent has context about what it has already written.
+</ParamField>
+
+<ParamField body="scope" type="string" default="sheet">
+  Controls which cells the agent can see when building its context.
+
+  - `"sheet"` — the entire active sheet (default)
+  - `"selection"` — only the cells listed in `selected_cells`
+</ParamField>
+
+<ParamField body="selected_cells" type="array">
+  A list of cell addresses in A1 notation that are currently selected in the UI, for example `["A1", "B2", "C3"]`. Used when `scope` is `"selection"`, and also passed to the agent as a hint about where the user's cursor is.
+</ParamField>
+
+<ParamField body="sheet" type="string">
+  Name of the sheet to target. Defaults to the active sheet when omitted.
+</ParamField>
+
+<ParamField body="model_id" type="string">
+  The LLM model ID to use for this request, for example `"gemini-2.0-flash"`. When omitted, GridOS selects the best available model from your configured providers.
+</ParamField>
+
+## Response
+
+<ResponseField name="category" type="string">
+  The agent ID that handled the request. Matches `agent_id`. Typical values are `"finance"` and `"general"`.
+</ResponseField>
+
+<ResponseField name="reasoning" type="string">
+  The agent's plain-language explanation of what it is proposing and why.
+</ResponseField>
+
+<ResponseField name="sheet" type="string">
+  The name of the sheet the preview targets.
+</ResponseField>
+
+<ResponseField name="agent_id" type="string">
+  The agent ID selected by the router. Pass this back unchanged in the `POST /agent/apply` request body.
+</ResponseField>
+
+<ResponseField name="target_cell" type="string">
+  The top-left cell of the proposed write after collision resolution, in A1 notation (for example `"B3"`). Pass this as `target_cell` in `POST /agent/apply`.
+</ResponseField>
+
+<ResponseField name="original_request" type="string">
+  The top-left cell as originally requested by the agent, before any collision shift. Useful for debugging placement differences.
+</ResponseField>
+
+<ResponseField name="preview_cells" type="array">
+  The individual cells that would be written, each represented as an object with `cell` (A1 address) and `value` (the proposed content). Empty when the agent has nothing to write this turn (for example, a pure acknowledgement or a macro proposal).
+</ResponseField>
+
+<ResponseField name="values" type="array | null">
+  A 2-D array (array of arrays) of the proposed cell values, in row-major order. `null` when the agent has no grid write for this turn — for example, when it proposes only a chart or a macro.
+</ResponseField>
+
+<ResponseField name="chart_spec" type="object | null">
+  A chart specification object if the agent is proposing a chart, otherwise `null`. Fields include `data_range`, `chart_type` (`"bar"`, `"line"`, or `"pie"`), `title`, `anchor_cell`, and `orientation`. Pass this through to `POST /agent/apply` unchanged.
+</ResponseField>
+
+<ResponseField name="proposed_macro" type="object | null">
+  A macro proposal if the agent is suggesting a new named formula, otherwise `null`. The macro is **not** saved automatically — you must approve it separately before it can be used in formulas. Contains `name`, `params`, `description`, `body`, and a `replaces_existing` boolean.
+</ResponseField>
+
+<ResponseField name="macro_error" type="string | null">
+  A validation error message if the agent proposed a macro that failed to compile, otherwise `null`. Surface this to the user so they can adjust their request.
+</ResponseField>
+
+<ResponseField name="plan" type="object | null">
+  A multi-section build plan emitted on the **first turn only** for complex builds (financial models, forecasts, budgets, and so on). Contains `title`, `anchor`, and a `sections` array where each section has `label`, `target`, and `notes`. On subsequent turns this field is `null`.
+</ResponseField>
+
+<Note>
+  When `values` is `null` and `chart_spec` is also `null`, the agent has nothing to write or render this turn. The UI should hide the Apply button and display `reasoning` as a conversational response.
+</Note>
+
+<Warning>
+  A `422` response means the agent returned output that GridOS could not apply safely — most commonly because the proposed formulas reference empty cells. The error detail explains which cells are problematic. Re-ask the agent to populate the referenced cells first, or fill them yourself before retrying.
+</Warning>
+
+## Example
+
+### Request
+
+```json
+{
+  "prompt": "Add a quarterly revenue forecast with 10% QoQ growth. Start at 100 in B3 and extend through E3.",
+  "history": [],
+  "scope": "sheet",
+  "selected_cells": ["B3"],
+  "sheet": "Sheet1",
+  "model_id": "gemini-3.1-flash-lite-preview"
+}
+```
+
+### Response
+
+```json
+{
+  "category": "finance",
+  "reasoning": "I'll write Q1–Q4 revenue values starting at B3, applying 10% quarter-over-quarter growth from a base of 100.",
+  "sheet": "Sheet1",
+  "agent_id": "finance",
+  "target_cell": "B3",
+  "original_request": "B3",
+  "preview_cells": [
+    { "cell": "B3", "value": 100 },
+    { "cell": "C3", "value": 110 },
+    { "cell": "D3", "value": 121 },
+    { "cell": "E3", "value": 133.1 }
+  ],
+  "values": [[100, 110, 121, 133.1]],
+  "chart_spec": null,
+  "proposed_macro": null,
+  "macro_error": null,
+  "plan": null
+}
+```

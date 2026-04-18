@@ -1,0 +1,123 @@
+---
+title: "Chain mode: let the AI build your workbook end-to-end"
+description: "Chain mode auto-applies every AI step, observes formula results, and continues building until your entire workbook plan is complete."
+---
+
+Chain mode removes the manual Apply step from the regular chat flow. Instead of reviewing and clicking Apply after each AI response, you send one prompt and GridOS loops — applying writes, reading formula results, and generating the next section — until the entire plan is done or you stop it. It's designed for large multi-section builds where clicking through every step would be tedious.
+
+## When to use chain mode
+
+<CardGroup cols={2}>
+  <Card title="Large financial models" icon="table">
+    Revenue, COGS, gross profit, OpEx, EBITDA, and a DCF terminal value all in one run — chain mode handles the full structure without you clicking Apply on each row.
+  </Card>
+  <Card title="Multi-section workbooks" icon="layer-group">
+    Any model with more than three or four sections benefits from chain mode. The agent tracks which sections it has written and which remain.
+  </Card>
+  <Card title="Formula-dependent builds" icon="function">
+    Chain mode observes the computed values of formulas after each write, so it can use those values to inform subsequent sections — for example, using a computed revenue figure to seed the COGS row.
+  </Card>
+  <Card title="Template-like builds from prompts" icon="wand-magic-sparkles">
+    Describe a full workbook in one prompt and let the agent build it end-to-end, just like opening a template but tailored exactly to your spec.
+  </Card>
+</CardGroup>
+
+## How chain mode works
+
+<Steps>
+  <Step title="Send your prompt">
+    Type your full build request in the chat composer and select **Chain** mode (instead of the default single-turn mode) before submitting.
+
+    ```text
+    Build a 4-quarter operating model: revenue starting at 100 with 10% QoQ growth,
+    COGS at 40% of revenue, gross profit, OpEx fixed at 20, and EBITDA
+    ```
+  </Step>
+  <Step title="The agent declares a plan">
+    On the first turn, the agent emits a plan — a structured preview of every section it intends to fill, with target ranges and notes. This plan is shown to you before any cells are written. The agent also writes the **first section only** on this turn.
+
+    ```text
+    Plan: Quarterly Operating Model
+    ├── Header row       B2:F2   Metric, Q1–Q4
+    ├── Revenue          B3:F3   100, 10% QoQ growth
+    ├── COGS             B4:F4   =MULTIPLY(revenue, 0.4)
+    ├── Gross Profit     B5:F5   =MINUS(revenue, COGS)
+    ├── OpEx             B6:F6   Fixed 20 per quarter
+    └── EBITDA           B7:F7   =MINUS(gross_profit, OpEx)
+    ```
+  </Step>
+  <Step title="GridOS auto-applies each step">
+    After writing a section, GridOS applies it to the kernel immediately — no click required. It then reads back the computed values of any formula cells and feeds those observations into the agent's next prompt.
+  </Step>
+  <Step title="The agent writes the next section">
+    Informed by the observed formula results (and any warnings), the agent writes the next section. This repeats until every section in the plan is complete.
+  </Step>
+  <Step title="Completion signal">
+    When all sections are done, the agent signals completion by returning `values=[[""]]` — an empty write. GridOS stops the loop and presents the final summary of all steps taken.
+  </Step>
+</Steps>
+
+## The plan preview
+
+The plan is informational — it shows you the full structure the agent intends to build before cells are filled. It is emitted only on the first turn and suppressed on all subsequent turns.
+
+Each section in the plan includes:
+
+| Field | Description |
+|---|---|
+| **label** | Human-readable name for the section (e.g. "Revenue", "COGS") |
+| **target** | The cell range the agent will write (e.g. `B3:F3`) |
+| **notes** | Brief description of the formula logic or values |
+
+<Info>
+  The plan is a preview, not a commitment. If the agent detects that a section needs to be retried (because of a column-alignment warning), it rewrites that section before advancing — the plan section count may not match the number of loop iterations exactly.
+</Info>
+
+## Column alignment auto-retry
+
+GridOS detects the most common formula error in financial models — referencing a label cell instead of the adjacent data cell — and triggers an automatic retry when it occurs.
+
+After applying each section, GridOS checks whether any formula references a text-valued cell. If it does, the agent receives a detailed warning and is told to re-emit the same section with corrected cell references **before moving to the next section**.
+
+```text
+*** COLUMN ALIGNMENT WARNING ***
+Formula in C4 references non-numeric cell B3 (value: "Revenue").
+Re-emit the COGS section with corrected formulas. Each formula in column X
+must reference cells in column X, not the label column.
+```
+
+This retry does not count as a wasted iteration — sections are only counted as cleanly written when they produce no warnings.
+
+## Iteration limits
+
+Chain mode runs for up to **10 iterations** by default. Each application of a section (including retries) counts as one iteration.
+
+<Warning>
+  If your model has more than 10 sections, chain mode will stop before completing it. Break the build into two prompts — run chain mode for the first half, then run it again for the second half.
+</Warning>
+
+You can reduce the limit by passing `max_iterations` in the API request if you want shorter runs during development.
+
+## Stopping chain mode
+
+Chain mode stops automatically when any of the following happen:
+
+- The agent returns an empty `values=[[""]]` completion signal
+- The maximum number of iterations is reached
+- The agent has no formula observations remaining and the plan is complete
+
+You can also dismiss the chain at any step from the UI — the cells written so far are kept; only the remaining steps are cancelled.
+
+## Chain mode vs. regular chat
+
+| | Regular chat | Chain mode |
+|---|---|---|
+| **Apply step** | Manual — you click Apply after each response | Automatic — applied immediately after each step |
+| **Formula observation** | Not fed back to the agent | Yes — computed values are included in the next prompt |
+| **Column alignment retry** | You see the error and re-ask manually | Automatic — the agent retries the section before moving on |
+| **Plan tracking** | Agent tracks progress informally | Agent tracks sections written vs. remaining, with explicit hints |
+| **Best for** | Single writes, quick edits, questions | Large multi-section builds, full model generation |
+
+<Tip>
+  For large financial models, combine chain mode with [templates](/guides/templates): open a template to get the skeleton, then use chain mode to fill in the model with your specific assumptions in a single prompt.
+</Tip>

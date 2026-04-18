@@ -1,0 +1,96 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "GridOS",
+  "theme": "luma",
+  "favicon": "https://media.brand.dev/34e71f82-bf7f-473a-9c8a-da0e37c3ba98.png",
+  "colors": {
+    "primary": "#040404",
+    "light": "#7c7c7c",
+    "dark": "#c3c3c3"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/shreydevkar/gridos"
+    }
+  },
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "api-keys"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/workbook",
+              "concepts/chat-and-agents",
+              "concepts/formulas",
+              "concepts/preview-apply"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/building-financial-models",
+              "guides/charts",
+              "guides/macros",
+              "guides/templates",
+              "guides/chain-mode"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/llm-providers",
+              "configuration/supported-models",
+              "configuration/cell-locking"
+            ]
+          },
+          {
+            "group": "Troubleshooting",
+            "pages": [
+              "troubleshooting/common-errors",
+              "troubleshooting/model-output-issues"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Agent",
+            "pages": [
+              "api/agent-chat",
+              "api/agent-apply",
+              "api/agent-chain"
+            ]
+          },
+          {
+            "group": "Grid & Workbook",
+            "pages": [
+              "api/grid-cell",
+              "api/workbook-sheets",
+              "api/charts"
+            ]
+          },
+          {
+            "group": "System",
+            "pages": [
+              "api/save-load-export",
+              "api/settings-providers"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

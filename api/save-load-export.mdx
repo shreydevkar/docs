@@ -1,0 +1,216 @@
+---
+title: "Save, load, export, and import workbooks"
+description: "Persist your GridOS workbook to disk, reload it after a restart, download a portable .gridos file, import a saved workbook, or wipe unlocked cells."
+---
+
+GridOS keeps your workbook in memory while the server is running. The endpoints on this page let you persist that state to disk, restore it, exchange workbooks as portable `.gridos` files, and selectively clear cell data. Use them to build save-on-exit workflows, backup scripts, or migration tooling.
+
+## POST /system/save
+
+Persist the current in-memory workbook state to `system_state.gridos` in the server's working directory. Call this endpoint whenever you want a recoverable snapshot — for example, before a large agent chain or at the end of a session.
+
+### Request
+
+No request body required.
+
+### Response
+
+<ResponseField name="status" type="string">
+  `"Success"` when the state was written to disk.
+</ResponseField>
+
+### Example
+
+```json
+POST /system/save
+```
+
+**Response**
+
+```json
+{
+  "status": "Success"
+}
+```
+
+<Note>
+  The save file is written to `system_state.gridos` in the directory from which you started the GridOS server. Move or back up this file if you need off-server storage.
+</Note>
+
+---
+
+## POST /system/load
+
+Load the workbook state from the `system_state.gridos` save file and replace the current in-memory state. If no save file exists, the endpoint returns an error status (HTTP `200`) rather than an HTTP error code.
+
+### Request
+
+No request body required.
+
+### Response
+
+<ResponseField name="status" type="string">
+  `"Success"` when the state was loaded, or `"Error"` when the save file does not exist.
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Present only when `status` is `"Error"`. Value: `"No save file found."`.
+</ResponseField>
+
+### Example
+
+```json
+POST /system/load
+```
+
+**Response (success)**
+
+```json
+{
+  "status": "Success"
+}
+```
+
+**Response (no save file)**
+
+```json
+{
+  "status": "Error",
+  "message": "No save file found."
+}
+```
+
+<Warning>
+  Loading replaces the entire in-memory workbook. Any unsaved changes made since the last `POST /system/save` are lost.
+</Warning>
+
+---
+
+## GET /system/export
+
+Download the current workbook as a `.gridos` file. The response is a file attachment with a timestamped filename derived from the workbook name. The file format is JSON and can be reimported with `POST /system/import`.
+
+### Query Parameters
+
+None.
+
+### Response
+
+Returns an `application/json` file download. The `Content-Disposition` header specifies a filename in the form `workbookname-YYYYMMDD-HHMMSS.gridos`.
+
+### Example
+
+```
+GET /system/export
+```
+
+**Response headers**
+
+```
+Content-Type: application/json
+Content-Disposition: attachment; filename="My_Model-20260418-120000.gridos"
+```
+
+**Response body** (truncated)
+
+```json
+{
+  "workbook_name": "My Model",
+  "sheets": { ... },
+  "charts": { ... }
+}
+```
+
+<Info>
+  Export timestamps use UTC. The filename replaces spaces in the workbook name with underscores and strips characters that are not alphanumeric, hyphens, or underscores.
+</Info>
+
+---
+
+## POST /system/import
+
+Replace the current workbook with the state contained in a `.gridos` file you previously exported. Send the parsed JSON content of the file as the request body.
+
+### Request
+
+The request body must be the full state dictionary from a `.gridos` file — i.e. the JSON object you would get from `GET /system/export`. Set the `Content-Type` header to `application/json`.
+
+<ParamField body="(workbook state)" type="object" required>
+  The complete workbook state dictionary. At minimum it must be a valid JSON object. The exact schema matches the output of `GET /system/export`.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  `"Success"` when the workbook was imported and is now the active state.
+</ResponseField>
+
+### Errors
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | The payload is not a valid JSON object, or the state dictionary could not be applied. |
+
+### Example
+
+```json
+POST /system/import
+{
+  "workbook_name": "My Model",
+  "sheets": { ... },
+  "charts": { ... }
+}
+```
+
+**Response**
+
+```json
+{
+  "status": "Success"
+}
+```
+
+<Warning>
+  Importing overwrites the entire current workbook immediately. There is no merge — the imported state fully replaces what is in memory. Save your current work first if you need it.
+</Warning>
+
+---
+
+## POST /system/clear
+
+Clear all unlocked cells on a sheet. Locked cells are preserved exactly as they are. This is the standard way to reset user-entered data while keeping any protected structure or template content in place.
+
+### Query Parameters
+
+<ParamField query="sheet" type="string">
+  The sheet to clear. Defaults to the currently active sheet when omitted.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  `"Success"` when the clear operation completed.
+</ResponseField>
+
+<ResponseField name="sheet" type="string">
+  The name of the sheet that was cleared.
+</ResponseField>
+
+### Example
+
+```json
+POST /system/clear?sheet=Draft
+```
+
+**Response**
+
+```json
+{
+  "status": "Success",
+  "sheet": "Draft"
+}
+```
+
+<Note>
+  Clearing a sheet does not remove its charts. Use `DELETE /system/charts/{chart_id}` to remove individual charts.
+</Note>

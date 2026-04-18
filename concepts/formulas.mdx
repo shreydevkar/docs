@@ -1,0 +1,165 @@
+---
+title: "GridOS formulas: built-in functions and syntax"
+description: "Complete reference for GridOS formula syntax: all 21 built-in primitives, range notation, error codes, and the rules for writing formulas in cells."
+---
+
+GridOS has its own formula engine built into the kernel. Formulas let cells compute values dynamically from other cells, update automatically when dependencies change, and serve as the building blocks for agent-generated financial models and data transformations. This page covers everything you need to write, read, and debug GridOS formulas.
+
+## Formula syntax basics
+
+A cell becomes a formula cell when its value starts with `=`. Everything after the `=` is evaluated by the GridOS expression parser.
+
+```
+=SUM(A1, B1)
+=DIVIDE(C3, D3)
+=IF(GT(A2, 0), "Profit", "Loss")
+```
+
+GridOS formulas call **named functions** with comma-separated arguments in parentheses. That's it — there is no other syntax for computations in cells.
+
+<Warning>
+  **No infix operators in cells.** Writing `=A1+B1` or `=C3*0.4` directly in a cell is not supported. Use the equivalent named function instead: `=SUM(A1, B1)` or `=MULTIPLY(C3, 0.4)`. Infix operators inside cell formulas produce a parse error (`#PARSE_ERROR!`).
+</Warning>
+
+<Warning>
+  **No nested function calls in cells.** `=SUM(MAX(A1, B1), C1)` is not valid in a grid cell. To compose functions, create a [user macro](/concepts/chat-and-agents#what-agents-can-do) — macro bodies are the one place where nesting is allowed.
+</Warning>
+
+## Cell references
+
+Reference another cell by its A1 address inside any function argument:
+
+```
+=MULTIPLY(C3, 0.4)      ← C3 is a cell reference; 0.4 is a literal
+=MINUS(Revenue, Cost)   ← only valid if Revenue/Cost are user macros, NOT cell addresses
+=SUM(B2, B3, B4)        ← three individual cell references
+```
+
+When the referenced cell changes value, every formula that depends on it recalculates automatically.
+
+## Range syntax
+
+Pass a rectangular block of cells to a function using `start:end` notation:
+
+```
+=SUM(A1:A10)        ← sums all values in column A, rows 1 through 10
+=AVERAGE(B2:D2)     ← averages B2, C2, and D2
+=MAX(C1:C20)        ← largest value in column C, rows 1–20
+```
+
+A range expands to every cell in the bounding rectangle, row by row, left to right. Empty cells in a range contribute `0` to numeric functions.
+
+<Note>
+  Range arguments (`A1:B6`) are only valid as **direct function arguments**, not as sub-expressions. `=SUM(AVERAGE(A1:A5), B1)` is forbidden in cells for the same reason nested calls are — use a macro if you need that composition.
+</Note>
+
+## Built-in primitives
+
+These 21 functions are always available. Agents receive the authoritative list at runtime, so they will never invent names outside this table.
+
+### Math functions
+
+<Tabs>
+  <Tab title="Arithmetic">
+
+| Function | Arguments | Returns | Example |
+| :------- | :-------- | :------ | :------ |
+| `SUM` | `*args` (one or more numbers or a range) | Sum of all arguments | `=SUM(A1:A10)` |
+| `MINUS` | `a, b` | `a − b` | `=MINUS(C3, D3)` |
+| `SUBTRACT` | `a, b` | `a − b` (alias for MINUS) | `=SUBTRACT(Revenue, COGS)` |
+| `MULTIPLY` | `a, b` | `a × b` | `=MULTIPLY(Units, Price)` |
+| `DIVIDE` | `a, b` | `a ÷ b` (returns `#DIV/0!` if b is 0) | `=DIVIDE(Profit, Revenue)` |
+| `AVERAGE` | `*args` or range | Arithmetic mean | `=AVERAGE(B2:B13)` |
+| `POWER` | `base, exponent` | `base ^ exponent` | `=POWER(1.1, 4)` |
+
+  </Tab>
+  <Tab title="Rounding & absolute">
+
+| Function | Arguments | Returns | Example |
+| :------- | :-------- | :------ | :------ |
+| `ROUND` | `value, digits` (digits defaults to 0) | Rounded value | `=ROUND(A1, 2)` |
+| `CEIL` | `value` | Ceiling integer | `=CEIL(A2)` |
+| `ABS` | `value` | Absolute value | `=ABS(MINUS(A1, B1))` |
+| `SQRT` | `value` | Square root | `=SQRT(C5)` |
+| `MAX` | `*args` or range | Largest value | `=MAX(A1:A12)` |
+| `MIN` | `*args` or range | Smallest value | `=MIN(A1:A12)` |
+
+  </Tab>
+</Tabs>
+
+### Comparison functions
+
+All comparisons return `true` or `false` and are most useful as the first argument to `IF`.
+
+| Function | Arguments | Returns | Example |
+| :------- | :-------- | :------ | :------ |
+| `GT` | `a, b` | `a > b` | `=GT(B2, 0)` |
+| `LT` | `a, b` | `a < b` | `=LT(C4, 100)` |
+| `EQ` | `a, b` | `a == b` | `=EQ(Status, "Done")` |
+| `GTE` | `a, b` | `a >= b` | `=GTE(Score, 90)` |
+| `LTE` | `a, b` | `a <= b` | `=LTE(Spend, Budget)` |
+
+### Logical functions
+
+| Function | Arguments | Returns | Example |
+| :------- | :-------- | :------ | :------ |
+| `IF` | `condition, when_true, when_false` | `when_true` if condition is truthy, else `when_false` | `=IF(GT(A2, 0), "Profit", "Loss")` |
+| `AND` | `*args` | `true` if all arguments are truthy | `=AND(GT(A1, 0), LT(A1, 100))` |
+| `OR` | `*args` | `true` if any argument is truthy | `=OR(EQ(A1, "Y"), EQ(A1, "yes"))` |
+| `NOT` | `value` | Logical negation | `=NOT(EQ(A3, ""))` |
+
+<Info>
+  Empty strings and `null` are treated as falsy by `IF`, `AND`, `OR`, and `NOT`. Every other value — including `0` and `false` — follows standard Python truthiness rules.
+</Info>
+
+## Formula examples by category
+
+<Tabs>
+  <Tab title="Finance">
+
+```
+=MULTIPLY(C3, 0.4)              ← COGS at 40% of revenue in C3
+=MINUS(Revenue, COGS)           ← gross profit (with named macros)
+=DIVIDE(GrossProfit, Revenue)   ← gross margin
+=ROUND(DIVIDE(B5, C5), 4)      ← NOT valid in a cell (nested) — use a macro
+=SUM(D3:D14)                    ← annual total from monthly column
+=POWER(1.1, 4)                  ← 10% growth compounded for 4 periods
+```
+
+  </Tab>
+  <Tab title="Comparison & logic">
+
+```
+=IF(GT(A2, 0), "Positive", "Non-positive")
+=IF(GTE(Score, 90), "A", IF(GTE(Score, 80), "B", "C"))   ← nested IF: NOT valid in cells
+=AND(GT(Revenue, 0), GT(EBITDA, 0))
+=OR(EQ(Status, "Done"), EQ(Status, "Closed"))
+=NOT(EQ(A3, ""))
+```
+
+<Note>
+  The nested `IF` example above (`IF(…, …, IF(…))`) is **not valid in a cell**. To implement tiered logic in a cell, create a macro that composes the calls, then call the macro from the cell.
+</Note>
+
+  </Tab>
+  <Tab title="Aggregation">
+
+```
+=SUM(A1:A10)          ← column total
+=AVERAGE(B2:B13)      ← monthly average over a year
+=MAX(C1:C20)          ← peak value
+=MIN(D1:D20)          ← floor value
+=ROUND(AVERAGE(E1:E5), 2)   ← NOT valid in cells; use a macro
+```
+
+  </Tab>
+</Tabs>
+
+## Error codes
+
+| Code | Cause | Fix |
+| :--- | :---- | :-- |
+| `#DIV/0!` | `DIVIDE` was called with a zero denominator, or a referenced cell is empty and used as a divisor. | Ensure the denominator cell is populated before applying the formula. The pre-apply guard blocks this automatically during AI writes. |
+| `#NAME?` | You called a function that is not in the registry (e.g. a typo or an Excel-only function like `VLOOKUP`). | Check the built-in primitives table above, or create a user macro for the missing behavior. |
+| `#VALUE!` | A function received the wrong number of arguments, or a non-numeric value where a number was required. | Inspect the cell references to confirm they contain numeric data. |
+| `#PARSE_ERROR!` | The formula string could not be tokenized — typically caused by infix operators (`+`, `-`, `*`, `/`) directly in the cell. | Rewrite using named functions: `=SUM(A1, B1)` instead of `=A1+B1`. |

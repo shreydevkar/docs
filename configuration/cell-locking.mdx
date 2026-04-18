@@ -1,0 +1,61 @@
+---
+title: "Lock cells to protect data from AI edits"
+description: "Mark individual cells or ranges as read-only in GridOS so the AI agent cannot overwrite them. Lock headers, verified formulas, and reference data."
+---
+
+Cell locking marks a cell or range as read-only. Once locked, a cell is protected from both AI agent writes and manual user edits. Use locking to preserve headers you have styled, formula outputs you have manually verified, and reference data that the AI should read but never touch.
+
+## How to lock cells
+
+<Steps>
+  <Step title="Select the cells you want to protect">
+    Click a single cell, or click and drag to select a range. You can also hold Shift and click to extend a selection.
+  </Step>
+  <Step title="Apply the lock">
+    Use the lock action in the GridOS toolbar or cell context menu. Locked cells display a visual indicator (a padlock icon) so you can see at a glance which cells are protected.
+  </Step>
+  <Step title="Confirm the lock is active">
+    Try typing into a locked cell. GridOS blocks the edit and shows an error — the cell is now fully protected.
+  </Step>
+</Steps>
+
+## How the AI respects locks
+
+When the AI agent proposes a write, the GridOS kernel checks the lock status of every target cell before applying anything. The agent is instructed to respect locked cells and will not attempt to overwrite them.
+
+If the agent's proposed write targets a locked cell, the kernel resolves the collision by shifting the write to the next free position — it does not silently overwrite the locked cell.
+
+<Note>
+  Collision resolution shifts writes to the right or downward, depending on the shift direction configured for that agent turn. The agent's reasoning card in the chat thread shows the actual target cell after any shift.
+</Note>
+
+## Locks also block manual user edits
+
+Locking is not just an AI guard — it also blocks manual edits from the cell editor. If you try to write to a locked cell, GridOS rejects the write and displays a clear error message.
+
+<Warning>
+  Locking a cell prevents all writes, including your own. Unlock the cell first if you need to edit it manually.
+</Warning>
+
+## Unlocking cells
+
+To unlock an individual cell or range, select the cells and use the unlock action in the toolbar or context menu. The padlock indicator disappears, and the cell becomes editable again by both you and the AI agent.
+
+To clear all locks across every sheet at once, use **Unlock All** in the GridOS menu. This removes the locked flag from every cell in the workbook and drops any placeholder locked cells that contain no value or formula.
+
+## Common use cases
+
+<AccordionGroup>
+  <Accordion title="Protect header rows">
+    Lock your column headers after setting them so the AI does not accidentally overwrite them when building out data rows below. Select the header row, apply the lock, then ask the AI to populate the data.
+  </Accordion>
+  <Accordion title="Protect manually verified formula outputs">
+    If you have corrected a formula result by hand and want to freeze the computed value, lock that cell. The AI will shift any future writes that target it rather than overwriting your verified value.
+  </Accordion>
+  <Accordion title="Protect reference data">
+    Assumptions tables, lookup values, and constants that the agent should read but never modify are good candidates for locking. The AI can still reference them in formulas — it just cannot write to them.
+  </Accordion>
+  <Accordion title="Protect template structure">
+    When applying a preset template, you can lock the structural cells (section headers, labels, formula structure) before asking the AI to fill in the variable data. This keeps the template layout intact through multiple chain iterations.
+  </Accordion>
+</AccordionGroup>

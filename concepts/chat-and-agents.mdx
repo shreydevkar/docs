@@ -1,0 +1,88 @@
+---
+title: "How GridOS agents read and edit your sheet"
+description: "Understand GridOS's two built-in AI agents, how automatic routing works, what agents can do, and the hard limits that keep your data safe."
+---
+
+When you type a message in the GridOS chat composer, you are not talking to a generic chatbot — you are dispatching a task to a specialized **agent** that reads your live grid state, reasons about what to write, and returns a structured plan the kernel can preview and apply. This page explains how that pipeline works end to end.
+
+## The two built-in agents
+
+GridOS ships with two agents, each tuned for a different class of task.
+
+<CardGroup cols={2}>
+  <Card title="Senior Financial Analyst" icon="chart-line">
+    Handles financial analysis, budgeting, forecasting, DCF models, income statements, break-even analysis, loan amortization, and any money-related math. Knows how to build multi-section financial models across chain turns and is strict about column alignment so formulas always reference the correct quarter.
+  </Card>
+  <Card title="General Data Assistant" icon="table">
+    Handles everything else: text manipulation, data entry, labeling, layout, clearing cells, and basic arithmetic. If you want to rename a column, fill a lookup table, or clear a range, this is the agent that runs.
+  </Card>
+</CardGroup>
+
+## Automatic routing
+
+You never need to pick an agent manually. Every time you send a message, GridOS runs an automatic **routing classifier** that reads your prompt and your recent conversation history, then picks whichever agent fits best.
+
+The classifier is intentionally run on the fastest configured small model (in preference order: `openai/gpt-oss-20b` on Groq → `llama-3.1-8b-instant` on Groq → `gemini-3.1-flash-lite-preview` → `claude-haiku-4-5-20251001`) regardless of which model you have selected in the chat composer. Classification is a trivial task that does not need frontier quality — pinning it to a fast model cuts wall-clock latency on every request.
+
+Your chosen model in the composer dropdown drives only the **agent call** — the part that actually reads the grid and generates cell writes.
+
+<Info>
+  If only one agent is configured, GridOS skips the routing step entirely and sends all prompts directly to that agent.
+</Info>
+
+## What agents can see
+
+Before generating a response, GridOS streams a full **grid snapshot** into the agent's context. This snapshot includes:
+
+- The value, formula, locked status, and datatype of every occupied cell
+- The occupied region bounding box (top-left → bottom-right, rows × cols)
+- A list of all existing charts on the active sheet
+- All registered built-in formula primitives
+- All user-authored macros
+- The full conversation history for the current session
+
+Agents use this context to place new data in sensible locations, reference the correct cells in formulas, and avoid overwriting content that already exists.
+
+## What agents can do
+
+<AccordionGroup>
+  <Accordion title="Write cells">
+    The agent returns a rectangular 2D array of values and a top-left target cell. GridOS previews those writes before committing anything. Values can be plain text, numbers, booleans, or formula strings starting with `=`.
+  </Accordion>
+  <Accordion title="Build multi-step plans">
+    For complex requests (financial models, forecasts, 3-statement builds), the agent emits a **plan** on the first turn — a structured list of sections with target ranges and notes. You see the full plan before any cells are filled. Subsequent chain turns fill one section at a time, and the agent observes formula results between steps to adjust its next write.
+  </Accordion>
+  <Accordion title="Propose macros">
+    If your request calls for a reusable named formula that does not already exist (e.g. `=MARGIN(revenue, cost)`), the agent can propose a new **macro** composed from built-in primitives. Proposed macros are not registered until you review and approve them — they appear in a proposal card in the chat thread.
+  </Accordion>
+  <Accordion title="Create and update charts">
+    The agent can attach a `chart_spec` to any response to create a bar, line, or pie chart over a data range. Charts are upserted by title, so sending the same title in a follow-up prompt resizes or retypes the chart in place rather than creating a duplicate.
+  </Accordion>
+</AccordionGroup>
+
+## Conversation history
+
+GridOS passes your full conversation history to every agent call — oldest message first. This means you can refer back to earlier work ("add a totals row to the revenue table you built in the last turn") and the agent will understand the reference. History is maintained in memory for the current session. Starting a fresh workbook clears the history.
+
+## Model picker
+
+Use the **model dropdown** in the chat composer to select which LLM drives the agent call. Every model whose provider has a valid API key configured in Settings appears in the list. You can switch models between messages — for example, use a fast Groq model for quick data entry and switch to Claude Opus or Gemini Pro for a complex DCF build.
+
+<Tip>
+  If a model returns garbled or non-JSON output, try switching to a stronger model (Gemini Pro or Claude Sonnet/Opus) or rephrase your prompt to be more specific.
+</Tip>
+
+## What agents cannot do
+
+Agents operate under hard constraints enforced by the GridOS kernel — not just instructions in the prompt.
+
+<Warning>
+  **Locked cells are inviolable.** The kernel checks every proposed write against the lock map before applying it. If the agent targets a locked cell, the write is blocked, even if the agent's reasoning claims otherwise. Shift logic relocates the write to the nearest free area instead.
+</Warning>
+
+| Constraint | Detail |
+| :--------- | :----- |
+| **No infix operators in cells** | `=A1+B1` is not a valid GridOS formula. Agents must use named primitives like `=MINUS(A1, B1)` or `=SUM(A1, B1)`. Attempting infix syntax in a cell produces a parse error. |
+| **No nested calls in grid cells** | `=SUM(MAX(A1, B1), C1)` is not allowed in a cell. Nesting is only permitted inside macro bodies. |
+| **One contiguous region per turn** | Each agent response targets exactly one rectangular region. Non-contiguous writes are split across chain turns. |
+| **No cross-sheet references** | Cell references inside formulas address the active sheet only. Cross-sheet referencing is on the roadmap but not yet supported. |

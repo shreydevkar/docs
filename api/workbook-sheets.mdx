@@ -1,0 +1,225 @@
+---
+title: "Manage workbooks and sheets via the REST API"
+description: "Retrieve workbook metadata, create and rename sheets, switch the active sheet, and rename the workbook itself using these five REST endpoints."
+---
+
+GridOS organises your data into a workbook that contains one or more named sheets. The endpoints on this page let you inspect the current workbook state and perform structural operations — creating sheets, renaming them, switching which one is active, and renaming the workbook itself. None of these operations touch cell data.
+
+## GET /api/workbook
+
+Retrieve the current workbook's name, the list of all sheet names, and which sheet is currently active. Use this to sync your client state before making structural changes.
+
+### Response
+
+<ResponseField name="workbook_name" type="string">
+  The display name of the open workbook.
+</ResponseField>
+
+<ResponseField name="active_sheet" type="string">
+  The name of the sheet that is currently active.
+</ResponseField>
+
+<ResponseField name="sheets" type="array of strings">
+  Ordered list of all sheet names in the workbook.
+</ResponseField>
+
+### Example
+
+```json
+GET /api/workbook
+```
+
+**Response**
+
+```json
+{
+  "workbook_name": "My Financial Model",
+  "active_sheet": "Income Statement",
+  "sheets": ["Income Statement", "Balance Sheet", "Cash Flow"]
+}
+```
+
+---
+
+## POST /workbook/sheet
+
+Create a new sheet in the workbook. If you omit `name`, GridOS generates one automatically (e.g. `Sheet2`). The new sheet is added to the end of the sheet list but does **not** become the active sheet automatically.
+
+### Request
+
+<ParamField body="name" type="string">
+  The desired name for the new sheet. Must be unique within the workbook. If omitted, a name is auto-generated.
+</ParamField>
+
+### Response
+
+<ResponseField name="sheet" type="string">
+  The name of the newly created sheet.
+</ResponseField>
+
+<ResponseField name="sheets" type="array of strings">
+  Updated ordered list of all sheet names.
+</ResponseField>
+
+<ResponseField name="active_sheet" type="string">
+  The sheet that is currently active (unchanged by this call).
+</ResponseField>
+
+### Example
+
+```json
+POST /workbook/sheet
+{
+  "name": "Cash Flow"
+}
+```
+
+**Response**
+
+```json
+{
+  "sheet": "Cash Flow",
+  "sheets": ["Income Statement", "Balance Sheet", "Cash Flow"],
+  "active_sheet": "Income Statement"
+}
+```
+
+---
+
+## POST /workbook/sheet/rename
+
+Rename an existing sheet. All internal references and chart associations follow the rename automatically.
+
+### Request
+
+<ParamField body="old_name" type="string" required>
+  The current name of the sheet to rename.
+</ParamField>
+
+<ParamField body="new_name" type="string" required>
+  The replacement name. Must be unique within the workbook.
+</ParamField>
+
+### Response
+
+<ResponseField name="sheet" type="string">
+  The new name of the renamed sheet.
+</ResponseField>
+
+<ResponseField name="sheets" type="array of strings">
+  Updated ordered list of all sheet names.
+</ResponseField>
+
+<ResponseField name="active_sheet" type="string">
+  The currently active sheet (updated to the new name if the active sheet was renamed).
+</ResponseField>
+
+### Example
+
+```json
+POST /workbook/sheet/rename
+{
+  "old_name": "Cash Flow",
+  "new_name": "Cash Flow Statement"
+}
+```
+
+**Response**
+
+```json
+{
+  "sheet": "Cash Flow Statement",
+  "sheets": ["Income Statement", "Balance Sheet", "Cash Flow Statement"],
+  "active_sheet": "Income Statement"
+}
+```
+
+---
+
+## POST /workbook/sheet/activate
+
+Switch the active sheet. Subsequent agent calls and grid reads that do not specify a `sheet` parameter will target this sheet.
+
+### Request
+
+<ParamField body="name" type="string" required>
+  The name of the sheet to make active. The sheet must already exist.
+</ParamField>
+
+### Response
+
+<ResponseField name="sheet" type="string">
+  The name of the now-active sheet.
+</ResponseField>
+
+<ResponseField name="sheets" type="array of strings">
+  Current ordered list of all sheet names.
+</ResponseField>
+
+<ResponseField name="active_sheet" type="string">
+  The name of the active sheet (same as `sheet`).
+</ResponseField>
+
+### Example
+
+```json
+POST /workbook/sheet/activate
+{
+  "name": "Balance Sheet"
+}
+```
+
+**Response**
+
+```json
+{
+  "sheet": "Balance Sheet",
+  "sheets": ["Income Statement", "Balance Sheet", "Cash Flow Statement"],
+  "active_sheet": "Balance Sheet"
+}
+```
+
+<Info>
+  Activating a sheet does not modify any cell data. It only changes the default target for subsequent API calls that omit the `sheet` parameter.
+</Info>
+
+---
+
+## POST /workbook/rename
+
+Rename the workbook itself. The new name is reflected in file exports and the workbook UI header.
+
+### Request
+
+<ParamField body="name" type="string" required>
+  The new display name for the workbook. Must be a non-empty string.
+</ParamField>
+
+### Response
+
+<ResponseField name="workbook_name" type="string">
+  The updated workbook name.
+</ResponseField>
+
+### Errors
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | The provided name is invalid (e.g. empty string). |
+
+### Example
+
+```json
+POST /workbook/rename
+{
+  "name": "Acme Corp — FY2026 Model"
+}
+```
+
+**Response**
+
+```json
+{
+  "workbook_name": "Acme Corp — FY2026 Model"
+}
+```

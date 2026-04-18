@@ -1,0 +1,112 @@
+---
+title: "Use and save workbook templates in GridOS"
+description: "Open a built-in GridOS template to start from a structured workbook, or save your own model as a reusable template for future sessions."
+---
+
+Templates give you a pre-built workbook structure that you can open instantly and extend with the AI. GridOS ships with five built-in financial starters, and you can save any workbook you've built as a template for future reuse. Built-in and user-saved templates appear in the same library, with origin badges to tell them apart.
+
+## Built-in templates
+
+GridOS includes the following preset templates:
+
+<CardGroup cols={2}>
+  <Card title="Simple DCF" icon="chart-line">
+    A discounted cash flow model with free cash flow projections and a terminal value. Good starting point for valuation work.
+  </Card>
+  <Card title="Monthly Budget" icon="calendar">
+    A month-by-month budget with revenue, headcount, and expense categories. Includes variance columns for actuals tracking.
+  </Card>
+  <Card title="Break-Even Analysis" icon="scale-balanced">
+    Fixed costs, variable costs per unit, and selling price — calculates the unit and revenue break-even point automatically.
+  </Card>
+  <Card title="Loan Amortization" icon="building-columns">
+    Principal, interest rate, and term inputs with a full amortization schedule showing payment, interest, and balance per period.
+  </Card>
+  <Card title="Income Statement" icon="file-invoice-dollar">
+    Revenue down to net income with COGS, gross profit, operating expenses, EBITDA, and tax rows.
+  </Card>
+</CardGroup>
+
+## Open a template
+
+<Steps>
+  <Step title="Go to the landing page">
+    Navigate to `http://127.0.0.1:8000`. The template library is displayed below the hero prompt field.
+  </Step>
+  <Step title="Choose a template">
+    Click any template card to preview its description. Built-in templates show a **Built-in** badge; templates you have saved show a **Yours** badge.
+  </Step>
+  <Step title="Open it">
+    Click **Open** to load the template into a fresh workbook. GridOS applies the template state to the kernel — all cells, formulas, and structure are restored exactly as saved.
+  </Step>
+  <Step title="Extend with AI">
+    Once the workbook is open, use the chat panel to add rows, adjust assumptions, or build on top of the structure:
+
+    ```text
+    Add a sensitivity table showing NPV at discount rates from 8% to 14%
+    ```
+
+    ```text
+    Extend the budget with a Q5 column using the same growth rate
+    ```
+  </Step>
+</Steps>
+
+## Save your own template
+
+After building a workbook you want to reuse, save it as a template from the File menu:
+
+<Steps>
+  <Step title="Open the File menu">
+    Click **File** in the top menu bar of the workbook view.
+  </Step>
+  <Step title="Click Save as Template">
+    Select **Save as Template** from the dropdown.
+  </Step>
+  <Step title="Name your template">
+    Enter a name and optional description in the dialog. The name is displayed in the template library — choose something descriptive.
+  </Step>
+  <Step title="Confirm">
+    Click **Save**. GridOS snapshots the current workbook state — all sheets, cells, formulas, and charts — and writes it to `data/templates/` as a `.json` file.
+  </Step>
+</Steps>
+
+<Note>
+  Template IDs are generated automatically by slugifying the name you enter. For example, a template named "My Q1 Model" gets the ID `my-q1-model`. If a template with that slug already exists, GridOS appends a counter (e.g. `my-q1-model-2`) to avoid overwriting it.
+</Note>
+
+## Template storage
+
+User-saved templates are stored in the `data/templates/` directory as individual `.json` files. Each file contains:
+
+- The template ID, name, description, and creation timestamp
+- A full snapshot of the workbook state: every sheet, cell, formula, and chart
+
+<Warning>
+  The `data/` directory is gitignored by default. Your saved templates are local to the machine running GridOS. Back up the `data/templates/` directory if you want to preserve them across reinstalls or share them with a team.
+</Warning>
+
+## Origin badges
+
+The template library distinguishes between template sources with visual badges:
+
+| Badge | Meaning |
+|---|---|
+| **Built-in** | Shipped with GridOS; read-only and always available |
+| **Yours** | Saved by you from the File menu; can be deleted |
+
+Deleting a user template removes its `.json` file from `data/templates/`. Built-in templates cannot be deleted from the UI.
+
+## Start from scratch
+
+If none of the templates fit your needs, use the landing page hero prompt to describe your workbook from scratch:
+
+```text
+Build a SaaS operating model with ARR, churn, expansion revenue, and a burn rate section
+```
+
+```text
+Create a project budget tracker with tasks, hours, rate per hour, and total cost columns
+```
+
+GridOS routes the prompt to the finance agent (or general agent, depending on the content), which declares a plan and starts building immediately. You can save the result as a template later.

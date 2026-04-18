@@ -1,0 +1,77 @@
+---
+title: "GridOS: Chat-first spreadsheet powered by your AI key"
+description: "GridOS is an agentic spreadsheet for building and editing workbooks by chatting with AI. Bring your own key from Gemini, Claude, Groq, or OpenRouter."
+---
+
+GridOS pairs a deterministic Python kernel with a large language model so you can describe what you want — "Build a 4-quarter revenue forecast with 10% QoQ growth" — and watch the sheet assemble itself. This page explains what GridOS is, the problems it solves, and how the bring-your-own-key model lets you choose your preferred AI provider without ever touching a config file beyond pasting a key in settings.
+
+## What GridOS does
+
+Traditional spreadsheets put all the burden on you: you write every formula, lay out every row, and debug every `#DIV/0!` yourself. GridOS flips that. You describe intent in the chat composer; the AI proposes structured edits; you review a preview and click **Apply** or **Dismiss**. The kernel enforces deterministic rules — collision checking, formula validation, cell locking — so the AI can't silently corrupt data you care about.
+
+Every AI write goes through a preview step before it touches the sheet, and a pre-apply guard blocks formulas whose inputs are empty before they can produce errors.
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Formula synthesis" icon="function" href="/concepts/formulas">
+    Natural-language prompts become executable grid formulas such as `=MINUS(C3,D3)` or `=AVERAGE(B2:B13)`. GridOS routes your message to a finance-specialized or general-purpose agent automatically.
+  </Card>
+  <Card title="Multi-provider LLMs" icon="brain-circuit" href="/api-keys">
+    Pick between Google Gemini, Anthropic Claude, Groq, and OpenRouter models from the chat composer. Switch models per-request; the provider is resolved at call time.
+  </Card>
+  <Card title="Persistent reasoning history" icon="clock-rotate-left" href="/concepts/preview-apply">
+    Every agent preview card is frozen in the chat thread after Apply or Dismiss with colored outcome badges — `APPLIED`, `DISMISSED`, `SUPERSEDED` — so the full audit trail stays visible.
+  </Card>
+  <Card title="Chain mode" icon="link" href="/guides/chain-mode">
+    The agent auto-applies each step, observes formula results, and continues until the plan is complete — no manual prompting required for multi-step builds.
+  </Card>
+  <Card title="Collision resolution" icon="shield-check" href="/concepts/preview-apply">
+    The kernel shifts data to avoid overwriting occupied or locked cells. Mark any range read-only and the AI cannot touch it.
+  </Card>
+  <Card title="Preset templates" icon="table-layout" href="/guides/templates">
+    Built-in starters — Simple DCF, Monthly Budget, Break-Even, Loan Amortization, Income Statement — plus user-saved templates with origin badges.
+  </Card>
+  <Card title="User macros" icon="code" href="/guides/macros">
+    The agent can propose reusable formulas like `=MARGIN(A,B)` composed from primitives. Approved macros become callable from any cell.
+  </Card>
+  <Card title="Chart overlays" icon="chart-line" href="/guides/charts">
+    In-app charts render via Chart.js and are upserted by title so the agent can resize or retype them in place without duplicating.
+  </Card>
+</CardGroup>
+
+## Bring-your-own-key model
+
+GridOS never bundles an API key. You supply one key from any supported provider and the full model catalog for that provider becomes available immediately. You can configure multiple providers at once and switch between their models per-request in the chat composer dropdown.
+
+<CardGroup cols={2}>
+  <Card title="Google Gemini" icon="google" href="/api-keys">
+    Free tier available at Google AI Studio. Gemini Flash Lite is the default routing model when a Gemini key is configured.
+  </Card>
+  <Card title="Anthropic Claude" icon="robot" href="/api-keys">
+    Haiku, Sonnet, and Opus variants available. Requires an Anthropic Console account with credits.
+  </Card>
+  <Card title="Groq" icon="bolt" href="/api-keys">
+    Genuinely free with no credit card required. Runs GPT-OSS and Llama models at up to ~1000 tokens/sec. Recommended for local development.
+  </Card>
+  <Card title="OpenRouter" icon="shuffle" href="/api-keys">
+    Access to free models including Hermes 3 Llama 405B and Llama 3.3 70B. Good fallback option; occasionally rate-limited.
+  </Card>
+</CardGroup>
+
+Keys are stored in `data/api_keys.json`, which is gitignored, so they never leave your machine and never appear in source control.
+
+## Landing-page hero prompt
+
+When you open GridOS you land on a page with a hero prompt field. Describe the workbook you want to build, press Enter, and GridOS clears the kernel, routes you to the workbook view, and auto-submits the prompt — you arrive on a sheet that is already building itself.
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Clone the repo, install dependencies, run the server, and build your first workbook in under five minutes.
+  </Card>
+  <Card title="Connect API keys" icon="key" href="/api-keys">
+    Add keys for Gemini, Claude, Groq, or OpenRouter via the in-app settings panel or a `.env` file.
+  </Card>
+</CardGroup>

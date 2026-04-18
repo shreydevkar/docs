@@ -1,0 +1,125 @@
+---
+title: "Define custom formulas with GridOS macros"
+description: "Create reusable named formulas in GridOS by asking the AI to propose a macro — then approve it and call it from any cell in your workbook."
+---
+
+Macros let you define named formulas composed from GridOS's built-in primitives. Once approved, a macro works exactly like a built-in function — you call it from any cell with `=MACRONAME(arg1, arg2)`. They're useful when the same ratio or calculation pattern appears in many rows of a model and you want to keep the cell formulas clean.
+
+## How macros work
+
+GridOS macros are pure, deterministic named formulas compiled from a body expression that may only reference built-in primitives (such as `DIVIDE`, `MINUS`, `MULTIPLY`, `SUM`, etc.) and the macro's own declared parameters. The body is validated before anything is saved — invalid formulas are rejected with a clear error message.
+
+<Note>
+  Macro bodies are the **one** place in GridOS where nested primitive calls are allowed. Grid cells must always be flat single-function calls, but inside a macro body you can write `=DIVIDE(MINUS(A, B), A)` to compose two primitives.
+</Note>
+
+## Ask the AI to propose a macro
+
+When you describe a reusable formula, the agent recognises the intent and proposes a `macro_spec` for your review. It does **not** save the macro automatically — you approve it first.
+
+```text
+Create a MARGIN macro that calculates gross margin from revenue and cost
+```
+
+The agent responds with a proposal like:
+
+```json
+{
+  "name": "MARGIN",
+  "params": ["A", "B"],
+  "description": "Gross margin: (A - B) / A",
+  "body": "=DIVIDE(MINUS(A, B), A)"
+}
+```
+
+The proposal appears in the chat preview card. Review the name, parameters, body expression, and description before approving.
+
+## Review and approve
+
+When a macro proposal appears in the chat:
+
+<Steps>
+  <Step title="Check the body expression">
+    Confirm the formula matches what you expect. The body must use only built-in primitives — you'll see an error if the agent accidentally used an unknown function name.
+  </Step>
+  <Step title="Approve the macro">
+    Click **Approve** on the proposal card. GridOS compiles the macro, registers it in the formula evaluator, and saves it to `data/user_macros.json`.
+  </Step>
+  <Step title="Ask the agent to use it">
+    After approval, send a follow-up asking the agent to write cells using the new macro:
+
+    ```text
+    Now use the MARGIN macro to calculate gross margin in D3:D10
+    ```
+
+    The agent can now call `=MARGIN(C3, D3)` in those cells.
+  </Step>
+</Steps>
+
+<Warning>
+  In the same response where it proposes a macro, the agent intentionally leaves cell values null or writes unrelated cells. The macro isn't registered yet at proposal time, so calling it in that same turn would fail. Always send a follow-up after approval.
+</Warning>
+
+## Macro syntax rules
+
+| Rule | Detail |
+|---|---|
+| **Name** | Letters, digits, and underscores only. Must not collide with any built-in primitive. |
+| **Parameters** | Uppercase single letters or short identifiers (e.g. `A`, `B`, `RATE`). Listed in the order they'll be passed. |
+| **Body** | Must start with `=`. May only call registered primitives — no infix operators, no references to other user macros. |
+| **Nesting** | Primitive calls may be nested inside a macro body (this is the only place nesting is allowed in GridOS). |
+| **Recursion** | Not supported. A macro body cannot call itself or another user macro. |
+
+## Call a macro from a cell
+
+Once approved, call the macro exactly like a built-in formula:
+
+```text
+=MARGIN(C3, D3)
+```
+
+GridOS resolves `MARGIN` through the same evaluator registry as `SUM`, `DIVIDE`, and the rest. If you pass the wrong number of arguments, the evaluator raises an error that appears in the cell.
+
+## Example macros
+
+<AccordionGroup>
+  <Accordion title="MARGIN — gross margin ratio">
+    **Params:** `A` (revenue), `B` (cost)
+
+    **Body:** `=DIVIDE(MINUS(A, B), A)`
+
+    **Usage:** `=MARGIN(C3, D3)` — gross margin for the row where C3 is revenue and D3 is cost.
+  </Accordion>
+  <Accordion title="MARKUP — cost markup percentage">
+    **Params:** `A` (price), `B` (cost)
+
+    **Body:** `=DIVIDE(MINUS(A, B), B)`
+
+    **Usage:** `=MARKUP(C5, D5)`
+  </Accordion>
+  <Accordion title="GROWTH — period-over-period growth rate">
+    **Params:** `A` (current period), `B` (prior period)
+
+    **Body:** `=DIVIDE(MINUS(A, B), B)`
+
+    **Usage:** `=GROWTH(D3, C3)` — growth from Q1 (C3) to Q2 (D3).
+  </Accordion>
+  <Accordion title="WTAVG — weighted average of two values">
+    **Params:** `A` (value), `B` (weight), `C` (total weight)
+
+    **Body:** `=DIVIDE(MULTIPLY(A, B), C)`
+
+    **Usage:** `=WTAVG(C3, D3, E3)`
+  </Accordion>
+</AccordionGroup>
+
+## Macro persistence and management
+
+- **Storage:** Approved macros are saved to `data/user_macros.json` and reloaded automatically every time the GridOS server starts.
+- **Updating a macro:** Ask the agent to propose a new version with the same name. Approving it replaces the previous definition.
+- **Deleting a macro:** Use the Tools panel in the UI, or send `DELETE /tools/macros/{macro_name}` to the API. Deleted macros are removed from the registry immediately — any cells that call them will error until you re-approve or rewrite them.
+- **Viewing macros:** Open the Tools panel (accessible from the toolbar) to see all registered macros alongside the built-in primitives.
+
+<Tip>
+  The agent always sees your approved macros in its context for every chat turn. You don't need to remind it that `MARGIN` exists — it will automatically use it when the calculation fits.
+</Tip>

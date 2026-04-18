@@ -1,0 +1,135 @@
+---
+title: "Create and update charts in GridOS with AI"
+description: "Ask GridOS to generate bar, line, or pie charts from your grid data — and update them in place by describing the change you want."
+---
+
+GridOS renders charts as overlays directly on the grid using Chart.js. You create and modify them the same way you do everything else in GridOS: by describing what you want in the chat. The AI reads the current grid, selects an appropriate data range and anchor cell, and produces the chart automatically.
+
+## Create a chart by asking
+
+Open the chat panel and describe the chart you want. You don't need to specify a data range — the agent reads the grid and picks one.
+
+```text
+Create a bar chart of the quarterly revenue data
+```
+
+```text
+Add a line chart showing monthly expenses vs. actuals
+```
+
+```text
+Make a pie chart of the market share breakdown in column B
+```
+
+The agent fills a `chart_spec` alongside any cell writes. When you click **Apply**, GridOS renders the chart as an overlay anchored to the grid cell you specified (or one the agent chose for you).
+
+## Chart types
+
+GridOS supports three chart types:
+
+<CardGroup cols={3}>
+  <Card title="Bar" icon="chart-bar">
+    Best for comparing values across categories — quarters, products, cost centers.
+  </Card>
+  <Card title="Line" icon="chart-line">
+    Best for time series — monthly revenue trends, rolling averages, multi-period forecasts.
+  </Card>
+  <Card title="Pie" icon="chart-pie">
+    Best for part-to-whole breakdowns — market share, budget allocation, segment mix.
+  </Card>
+</CardGroup>
+
+## How the agent picks data range and anchor
+
+When you ask for a chart, the agent inspects the full grid state and decides:
+
+- **`data_range`** — the rectangular range covering both labels and values (for example, `A1:B6`)
+- **`anchor_cell`** — the top-left cell where the chart overlay appears; the agent picks an empty area of the grid so the chart doesn't sit on top of your data
+- **`orientation`** — `columns` means the first column contains labels (typical for most models); `rows` means the first row contains labels
+
+<Note>
+  You can override any of these by being explicit in your prompt: "create a bar chart of A1:D10 anchored at F2 using the first row as labels."
+</Note>
+
+## Update an existing chart
+
+To move, retype, or resize a chart, describe the change you want. GridOS matches the chart by its **title** and updates it in place — it does not create a duplicate.
+
+```text
+Move the revenue chart to F16
+```
+
+```text
+Change the scores chart to a pie chart
+```
+
+```text
+Resize the quarterly expenses chart to anchor at H2
+```
+
+<Warning>
+  When updating an existing chart, refer to it by the exact title it was created with (for example, "the revenue chart" or "Quarterly Revenue"). If the title doesn't match, the agent creates a new chart instead of updating the existing one.
+</Warning>
+
+The agent reuses the same title in `chart_spec`, and GridOS upserts the chart in place — the chart ID stays the same, only the properties change.
+
+## Chart data orientation
+
+The `orientation` field controls how GridOS interprets your data range:
+
+<Tabs>
+  <Tab title="columns (default)">
+    The first column of the range contains category labels. Subsequent columns are data series. This is the standard layout for most GridOS financial models.
+
+    ```text
+    A1: Quarter   B1: Revenue   C1: Expenses
+    A2: Q1        B2: 100       C2: 60
+    A3: Q2        B3: 110       C3: 65
+    A4: Q3        B4: 121       C4: 70
+    ```
+
+    Data range `A1:C4`, orientation `columns`.
+  </Tab>
+  <Tab title="rows">
+    The first row of the range contains category labels. Subsequent rows are data series. Use this when your data is laid out horizontally.
+
+    ```text
+    A1: Quarter   A2: Revenue   A3: Expenses
+    B1: Q1        B2: 100       B3: 60
+    C1: Q2        C2: 110       C3: 65
+    D1: Q3        D2: 121       D3: 70
+    ```
+
+    Data range `A1:D3`, orientation `rows`.
+  </Tab>
+</Tabs>
+
+## Create a chart manually
+
+You can also create charts directly from the UI without using the chat:
+
+<Steps>
+  <Step title="Select your data">
+    Click and drag to highlight the cells you want to chart, including the label column or row.
+  </Step>
+  <Step title="Open the chart dialog">
+    Use the **Insert** menu or the chart toolbar button to open the chart creation panel.
+  </Step>
+  <Step title="Configure and insert">
+    Choose the chart type, confirm the data range, and set the anchor cell. Click **Create** to render the chart overlay.
+  </Step>
+</Steps>
+
+## Manage charts
+
+<AccordionGroup>
+  <Accordion title="Delete a chart">
+    Ask the agent to remove it ("delete the revenue chart") or use the chart's close button in the UI to remove it from the grid.
+  </Accordion>
+  <Accordion title="Charts across sheets">
+    Each chart belongs to the sheet it was created on. Switching to a different sheet tab hides the charts from other sheets and shows only the charts for the active sheet.
+  </Accordion>
+  <Accordion title="Chart persistence">
+    Charts are saved as part of your workbook state. When you export a `.gridos` file or save the workbook, all charts on every sheet are included.
+  </Accordion>
+</AccordionGroup>

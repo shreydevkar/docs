@@ -1,0 +1,142 @@
+---
+title: "Get GridOS running locally and build your first workbook"
+description: "Clone GridOS, install dependencies, start the server, add an API key, and use the hero prompt to build your first AI-powered workbook in minutes."
+---
+
+GridOS runs as a local FastAPI server that you open in your browser. This guide walks you through cloning the repository, installing dependencies, starting the server, and using the landing-page hero prompt to create your first AI-built workbook. You need Python 3.10 or later and at least one LLM API key — Groq is free and requires no credit card, so it is the fastest way to get started.
+
+## Prerequisites
+
+- **Python 3.10+** — check with `python --version` or `python3 --version`
+- **One LLM API key** — Groq is recommended (free, no credit card): [console.groq.com](https://console.groq.com)
+
+<Note>
+  You only need one key. GridOS unlocks all models for whichever providers you have configured — you can add more later from the in-app settings panel.
+</Note>
+
+## Setup
+
+<Steps>
+  <Step title="Clone the repository">
+    Clone the GridOS repo and enter the project directory.
+
+    ```bash
+    git clone https://github.com/shreydevkar/gridos.git
+    cd gridos
+    ```
+  </Step>
+
+  <Step title="Create and activate a virtual environment">
+    Using a virtual environment keeps GridOS dependencies isolated from your system Python.
+
+    ```bash
+    python -m venv .venv
+    source .venv/bin/activate
+    ```
+
+    On Windows PowerShell, activate with:
+
+    ```powershell
+    .venv\Scripts\Activate.ps1
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install all required packages from `requirements.txt`. This pulls in FastAPI, Uvicorn, the provider SDKs, and Pydantic.
+
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+    The install takes about 30–60 seconds on a typical connection. The key packages are:
+
+    | Package | Purpose |
+    | :--- | :--- |
+    | `fastapi` | REST API framework |
+    | `uvicorn` | ASGI server |
+    | `google-genai` | Gemini provider SDK |
+    | `anthropic` | Claude provider SDK |
+    | `openai` | Shared SDK for Groq and OpenRouter |
+    | `python-dotenv` | `.env` file support |
+  </Step>
+
+  <Step title="Start the server">
+    Run the Uvicorn server with hot-reload enabled so changes take effect without a restart.
+
+    ```bash
+    uvicorn main:app --reload
+    ```
+
+    You should see output like:
+
+    ```
+    INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+    INFO:     Started reloader process
+    ```
+
+    Open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser. You will land on the GridOS landing page.
+
+    <Warning>
+      The model picker in the chat composer will be empty until you add at least one API key. Attempting to submit a prompt without a key returns a 400 error: "No LLM provider is configured."
+    </Warning>
+  </Step>
+
+  <Step title="Add an API key">
+    Click the **gear icon** in the top menubar to open the Settings panel. Paste your API key into the field for the provider you are using (for example, Groq), then click **Save**.
+
+    GridOS writes the key to `data/api_keys.json`, which is gitignored. The model picker in the chat composer immediately lists every model whose provider now has a valid key.
+
+    <Tip>
+      If you prefer to use a `.env` file instead of the settings UI, see [Connect your API keys](/api-keys) for the full list of environment variable names and when each approach is preferable.
+    </Tip>
+  </Step>
+
+  <Step title="Build your first workbook">
+    You are now on the GridOS landing page with a hero prompt field in the center. Type a description of the workbook you want to build and press **Enter**.
+
+    Some examples to try:
+
+    ```
+    Build a 4-quarter revenue forecast with 10% QoQ growth
+    ```
+
+    ```
+    Create a monthly budget tracker with income, fixed costs, and variable expenses
+    ```
+
+    ```
+    Build a break-even analysis for a product with $50 variable cost and $10,000 fixed overhead
+    ```
+
+    GridOS clears the kernel, routes you to the workbook view, and auto-submits the prompt. The AI agent begins writing cells immediately. You will see preview cards appear in the chat thread as the agent proposes each batch of writes.
+  </Step>
+
+  <Step title="Review and apply AI suggestions">
+    Each agent turn produces a **preview card** in the chat thread showing the proposed cell writes. You have three options:
+
+    - **Apply** — commits the writes to the sheet. The card badge changes to `APPLIED`.
+    - **Dismiss** — discards the suggestion. The card badge changes to `DISMISSED`.
+    - **Continue chatting** — refine the prompt and the agent produces a new suggestion. Previous cards are marked `SUPERSEDED`.
+
+    <Info>
+      GridOS runs a pre-apply formula guard before committing any write. If a proposed formula references an empty cell that would cause a `#DIV/0!` or similar error, the write is blocked and you see a clear error message — the sheet is never modified.
+    </Info>
+  </Step>
+</Steps>
+
+## What to try next
+
+<CardGroup cols={2}>
+  <Card title="Switch models mid-session" icon="sliders" href="/api-keys">
+    Use the model picker dropdown in the chat composer to switch between providers and models for any individual prompt.
+  </Card>
+  <Card title="Lock cells" icon="lock" href="/configuration/cell-locking">
+    Click any cell and mark it read-only. The AI cannot overwrite locked ranges, even in chain mode.
+  </Card>
+  <Card title="Open a template" icon="table-layout" href="/guides/templates">
+    Click **File → Templates** to browse built-in starters like Simple DCF, Loan Amortization, and Income Statement.
+  </Card>
+  <Card title="Enable chain mode" icon="link" href="/guides/chain-mode">
+    Toggle chain mode in the chat composer to let the agent auto-apply steps and keep going until the full plan is done.
+  </Card>
+</CardGroup>

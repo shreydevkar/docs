@@ -1,0 +1,89 @@
+---
+title: "Workbooks, sheets, and cells in GridOS"
+description: "Learn how GridOS organizes your data into workbooks, named sheets, and individually addressable cells — and how persistence keeps your work safe."
+---
+
+Every GridOS project lives inside a **workbook** — a single container that holds one or more named sheets, your conversation history, and any charts or macros you have built up. Understanding the workbook model helps you navigate large datasets, keep related tables organized, and hand off projects to collaborators without losing context.
+
+## Workbooks
+
+A workbook is the top-level object in GridOS. It has a name (editable at any time from the toolbar), and it serializes to a `.gridos` file that you can save, share, and reopen. Each workbook starts with one sheet named **Sheet1**, and you can add more at any time.
+
+<Note>
+  The workbook name is stored inside the `.gridos` file, so renaming it in the app keeps the filename and the in-app title in sync only if you re-save after renaming.
+</Note>
+
+## Sheets
+
+Sheets are the individual tabs inside a workbook. Each sheet is an independent grid of cells with its own data, formulas, and charts.
+
+<CardGroup cols={3}>
+  <Card title="Create a sheet" icon="plus">
+    Click the **+** tab button at the bottom of the screen. GridOS names it automatically (`Sheet2`, `Sheet3`, …) or accepts a custom name.
+  </Card>
+  <Card title="Rename a sheet" icon="pencil">
+    Double-click the tab label and type a new name. Names must be non-empty and unique within the workbook.
+  </Card>
+  <Card title="Switch sheets" icon="arrow-right-arrow-left">
+    Click any tab to activate it. The active sheet is highlighted, and all AI chat commands operate on the active sheet by default.
+  </Card>
+</CardGroup>
+
+<Warning>
+  Deleting a sheet removes all of its cells, formulas, and charts permanently. There is no undo beyond reopening a previously saved `.gridos` file.
+</Warning>
+
+## Cells and A1 notation
+
+Each sheet is a two-dimensional grid. Columns are labeled with letters (A, B, C … Z, AA, AB …) and rows with numbers (1, 2, 3 …). A **cell address** combines the column letter and the row number: `A1` is the top-left cell, `B3` is column B row 3, and `C10` is column C row 10.
+
+You will see A1 notation everywhere in GridOS — in the formula bar, in chat output, in chart data-range fields, and in the kernel's JSON payloads.
+
+### What a cell stores
+
+Every cell holds:
+
+| Field | Description |
+| :---- | :---------- |
+| **Value** | The computed result — a number, string, boolean, or an error code such as `#DIV/0!`. |
+| **Formula** | The raw formula string (e.g. `=SUM(A1:A10)`) if the cell was written with one, or `null` for plain values. |
+| **Datatype** | Detected automatically: `string`, `int`, `float`, or `boolean`. |
+| **Locked** | Whether the cell is read-only. See [Cell locking](#cell-locking). |
+
+When a cell contains a formula, GridOS stores both the formula and the computed value. If an upstream cell changes, all dependent formulas recalculate automatically.
+
+## Occupied region
+
+The **occupied region** is the smallest bounding rectangle that contains every non-empty cell on the active sheet. GridOS exposes this to the AI so the agent knows where your data lives without scanning the entire infinite grid. You will see it reported in the status bar as a range like `A1 → F24`.
+
+When the agent proposes a write that overlaps occupied cells, the kernel uses the occupied region to decide where to shift the incoming data. See [Collision resolution](/concepts/preview-apply) for details.
+
+## Cell locking
+
+You can mark any range of cells as **locked** (read-only). Locked cells display a padlock badge and cannot be overwritten — by you or by an agent. This is useful for protecting header rows, reference tables, or computed outputs you want to freeze.
+
+<Tip>
+  Lock cells after the AI has populated them to prevent accidental overwrites during subsequent agent turns.
+</Tip>
+
+To lock a range, select the cells and choose **Lock selection** from the right-click context menu. To unlock, select the locked range and choose **Unlock selection**.
+
+## Workbook persistence
+
+GridOS saves workbooks as `.gridos` files — a JSON document that records every sheet, cell value, formula, lock state, chart, and macro.
+
+<Steps>
+  <Step title="Manual save">
+    Open the **File** menu and click **Save**. Choose a filename and location. The file extension `.gridos` is added automatically.
+  </Step>
+  <Step title="Open a workbook">
+    Click **File → Open** and select a `.gridos` file. GridOS loads all sheets, restores the active sheet, and re-evaluates every formula.
+  </Step>
+  <Step title="Export / Import">
+    Use **File → Export** to download the current state as a `.gridos` file, and **File → Import** to load one. These are equivalent to save/open but use browser download/upload flows instead of the filesystem dialog.
+  </Step>
+</Steps>
+
+<Info>
+  GridOS does not currently auto-save. Save frequently if you are running long agent chains — especially before applying a large batch of cell writes.
+</Info>

@@ -1,0 +1,139 @@
+---
+title: "Write cells and ranges directly to the grid"
+description: "Use POST /grid/cell and POST /grid/range to write individual cells or rectangular blocks of data to any sheet in your GridOS workbook."
+---
+
+GridOS exposes two direct-write endpoints that let you set cell values without going through the agent pipeline. Use these when you already know exactly what you want to write — a single cell update, a pasted table, or a programmatically generated data block. Both endpoints respect cell locks: writes to locked cells are rejected with a `400` error.
+
+## POST /grid/cell
+
+Write a single cell value in A1 notation. The value can be a plain string, a number stored as a string, or a formula starting with `=`. If you omit `value`, the cell is cleared.
+
+### Request
+
+<ParamField body="cell" type="string" required>
+  The target cell in A1 notation (e.g. `"B4"` or `"AA12"`). The value is uppercased automatically.
+</ParamField>
+
+<ParamField body="value" type="string">
+  The value to write. Defaults to an empty string, which clears the cell. Formulas must start with `=`.
+</ParamField>
+
+<ParamField body="sheet" type="string">
+  Name of the sheet to target. Defaults to the currently active sheet when omitted.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  `"Success"` when the cell was written without errors.
+</ResponseField>
+
+<ResponseField name="cell" type="string">
+  The A1 address that was written (uppercased).
+</ResponseField>
+
+<ResponseField name="sheet" type="string">
+  The name of the sheet that received the write.
+</ResponseField>
+
+### Errors
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | The target cell is locked. Unlock it before writing. |
+
+### Example
+
+```json
+POST /grid/cell
+{
+  "cell": "B4",
+  "value": "=SUM(B1, B2, B3)",
+  "sheet": "Financials"
+}
+```
+
+**Response**
+
+```json
+{
+  "status": "Success",
+  "cell": "B4",
+  "sheet": "Financials"
+}
+```
+
+<Warning>
+  Writing to a locked cell returns HTTP `400`. Unlock the cell from the GridOS UI or via the unlock endpoint before writing.
+</Warning>
+
+---
+
+## POST /grid/range
+
+Write a rectangular 2-D block of values starting from a top-left anchor cell. The `values` array maps directly onto the grid: each inner array is a row, and each element within that array is a column value.
+
+### Request
+
+<ParamField body="target_cell" type="string" required>
+  The top-left anchor cell in A1 notation (e.g. `"A1"`). The range expands down and to the right based on the dimensions of `values`.
+</ParamField>
+
+<ParamField body="values" type="array of arrays" required>
+  A 2-D array where each inner array represents one row. Elements can be strings, numbers, booleans, or `null`. Formulas must start with `=`. An empty inner array writes nothing for that row.
+</ParamField>
+
+<ParamField body="sheet" type="string">
+  Name of the sheet to target. Defaults to the currently active sheet when omitted.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  `"Success"` when the entire range was written without errors.
+</ResponseField>
+
+<ResponseField name="target" type="string">
+  The anchor cell that was used (uppercased).
+</ResponseField>
+
+<ResponseField name="sheet" type="string">
+  The name of the sheet that received the write.
+</ResponseField>
+
+### Errors
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | One or more cells in the target range are locked. No partial writes are made. |
+
+### Example
+
+```json
+POST /grid/range
+{
+  "target_cell": "A1",
+  "values": [
+    ["Month", "Revenue", "Expenses"],
+    ["Jan", 42000, 31000],
+    ["Feb", 47500, 33200],
+    ["Mar", 51000, 35800]
+  ],
+  "sheet": "Q1 Summary"
+}
+```
+
+**Response**
+
+```json
+{
+  "status": "Success",
+  "target": "A1",
+  "sheet": "Q1 Summary"
+}
+```
+
+<Note>
+  Rows in `values` can be of different lengths. Shorter rows simply write fewer columns; they do not clear cells to the right of the last element in that row.
+</Note>

@@ -1,0 +1,150 @@
+---
+title: "POST /agent/apply — commit a previewed agent write"
+description: "Commit a previewed agent write to the sheet. Pass the values and target_cell from the chat response through to this endpoint to apply the changes."
+---
+
+Use this endpoint to commit a write that was returned by `POST /agent/chat`. GridOS uses a two-step preview-then-apply model: the chat endpoint shows you what the agent *would* write, and this endpoint makes it permanent. You should pass the `agent_id`, `target_cell`, `values`, and `chart_spec` fields directly from the chat response — do not modify them, as the kernel uses them to resolve any cell collisions consistently with what was previewed.
+
+<Note>
+  If the requested `target_cell` is already occupied, GridOS shifts the write in the direction specified by `shift_direction` and reports the actual destination in `actual_target`. A `status` of `"Collision Resolved"` means the write landed somewhere other than the cell originally requested.
+</Note>
+
+## Request
+
+<ParamField body="agent_id" type="string" required>
+  The agent ID from the chat response. Pass the `agent_id` field through unchanged.
+</ParamField>
+
+<ParamField body="target_cell" type="string" required>
+  The top-left cell where the write should begin, in A1 notation. Use the `target_cell` value from the chat response — not `original_request`.
+</ParamField>
+
+<ParamField body="values" type="array" required>
+  A 2-D array of cell values to write, in row-major order. This is the `values` field from the chat response. Each inner array represents one row; values can be strings, numbers, booleans, or `null`.
+</ParamField>
+
+<ParamField body="sheet" type="string">
+  Name of the sheet to write to. Defaults to the active sheet when omitted. Use the `sheet` value from the chat response to ensure consistency.
+</ParamField>
+
+<ParamField body="shift_direction" type="string" default="right">
+  Direction to shift data when the target region is already occupied.
+
+  - `"right"` — shift data to the right by the required number of columns (default)
+  - `"down"` — shift data downward by the required number of rows
+</ParamField>
+
+<ParamField body="chart_spec" type="object">
+  The chart specification from the chat response. Pass this through unchanged if the agent proposed a chart; omit or set to `null` if it did not. When provided, GridOS creates or updates the chart after writing the cell data.
+</ParamField>
+
+## Response
+
+<ResponseField name="status" type="string">
+  The outcome of the write operation.
+
+  - `"Success"` — data was written to the exact cell requested
+  - `"Collision Resolved"` — the target was occupied; data was shifted and written at `actual_target`
+  - `"Partial"` — cell data was written successfully but chart creation failed; see `chart_error`
+</ResponseField>
+
+<ResponseField name="sheet" type="string">
+  The name of the sheet that was written to.
+</ResponseField>
+
+<ResponseField name="actual_target" type="string">
+  The cell address where data was actually written, in A1 notation. When `status` is `"Success"` this matches the requested `target_cell`. When `status` is `"Collision Resolved"` this will differ.
+</ResponseField>
+
+<ResponseField name="chart" type="object | null">
+  The created or updated chart object when a `chart_spec` was provided and chart creation succeeded. Contains the full chart metadata including its assigned `id`. `null` when no chart was requested.
+</ResponseField>
+
+<ResponseField name="chart_error" type="string | null">
+  An error message describing why chart creation failed, when `status` is `"Partial"`. The cell data was still written; only the chart was skipped. `null` on success.
+</ResponseField>
+
+<Warning>
+  Only apply a preview once. Calling this endpoint multiple times with the same payload will write duplicate data. If you need to undo a write, use the clear or cell-update endpoints to revert the affected cells manually.
+</Warning>
+
+## Example
+
+The typical pattern is to take the fields from a `POST /agent/chat` response and forward them directly to this endpoint.
+
+### Request
+
+```json
+{
+  "agent_id": "finance",
+  "target_cell": "B3",
+  "values": [[100, 110, 121, 133.1]],
+  "sheet": "Sheet1",
+  "shift_direction": "right",
+  "chart_spec": null
+}
+```
+
+### Response — success, no collision
+
+```json
+{
+  "status": "Success",
+  "sheet": "Sheet1",
+  "actual_target": "B3",
+  "chart": null
+}
+```
+
+### Response — collision resolved
+
+```json
+{
+  "status": "Collision Resolved",
+  "sheet": "Sheet1",
+  "actual_target": "F3",
+  "chart": null
+}
+```
+
+### Request with chart
+
+```json
+{
+  "agent_id": "finance",
+  "target_cell": "B3",
+  "values": [
+    ["Q1", "Q2", "Q3", "Q4"],
+    [100, 110, 121, 133.1]
+  ],
+  "sheet": "Sheet1",
+  "shift_direction": "right",
+  "chart_spec": {
+    "data_range": "B3:E4",
+    "chart_type": "bar",
+    "title": "Quarterly Revenue Forecast",
+    "anchor_cell": "G3",
+    "orientation": "columns"
+  }
+}
+```
+
+### Response with chart
+
+```json
+{
+  "status": "Success",
+  "sheet": "Sheet1",
+  "actual_target": "B3",
+  "chart": {
+    "id": "chart-a1b2c3",
+    "anchor_cell": "G3",
+    "data_range": "B3:E4",
+    "chart_type": "bar",
+    "title": "Quarterly Revenue Forecast",
+    "width": 400,
+    "height": 280,
+    "orientation": "columns"
+  }
+}
+```

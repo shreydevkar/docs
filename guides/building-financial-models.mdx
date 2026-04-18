@@ -1,0 +1,171 @@
+---
+title: "Build financial models with AI in GridOS"
+description: "Learn how to build DCF, budget, and revenue models in GridOS by chatting with the AI finance agent — no formulas to write by hand."
+---
+
+GridOS routes financial prompts to a dedicated Senior Financial Analyst agent that understands multi-section models, COGS percentages, growth rates, and discounting. You describe the model you want, the agent declares a plan, and then fills each section one step at a time — either interactively (click Apply after each preview) or hands-free using Chain Mode.
+
+## Start your model
+
+You have two entry points:
+
+<Tabs>
+  <Tab title="Hero prompt on the landing page">
+    <Steps>
+      <Step title="Open the landing page">
+        Navigate to the GridOS landing page at `http://127.0.0.1:8000`.
+      </Step>
+      <Step title="Describe your model">
+        Type your model description into the hero prompt field. Be specific — include the time periods, drivers, and growth rates you want.
+
+        ```text
+        Build a 4-quarter revenue forecast with 10% QoQ growth starting from 100
+        ```
+
+        ```text
+        Create a simple DCF model with 5-year projections and a 10% discount rate
+        ```
+      </Step>
+      <Step title="Submit">
+        Press Enter or click the arrow button. GridOS clears the kernel, opens a fresh workbook, and auto-submits your prompt — you land on a sheet that's already building.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Open a template">
+    <Steps>
+      <Step title="Browse templates">
+        On the landing page, select one of the built-in starters: **Simple DCF**, **Monthly Budget**, **Break-Even Analysis**, **Loan Amortization**, or **Income Statement**.
+      </Step>
+      <Step title="Open and extend">
+        The template pre-populates a structured workbook. Open the chat panel and ask the agent to add or adjust sections:
+
+        ```text
+        Add a sensitivity table showing NPV at discount rates from 8% to 14%
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## How the finance agent plans your model
+
+When you ask for a multi-section build — a DCF, budget, 3-statement model, or any forecast — the agent declares a **plan** on the first turn before writing any cells. The plan shows you every section it intends to fill, the target cell range, and brief notes.
+
+```text
+Create an operating model: revenue, COGS at 40%, gross profit, OpEx, and EBITDA across 4 quarters
+```
+
+The agent responds with a plan like:
+
+| Section | Target range | Notes |
+|---|---|---|
+| Header row | B2:F2 | Metric, Q1–Q4 |
+| Revenue | B3:F3 | 100 in Q1, 10% QoQ growth |
+| COGS | B4:F4 | =MULTIPLY(revenue, 0.4) |
+| Gross Profit | B5:F5 | =MINUS(revenue, COGS) |
+| OpEx | B6:F6 | Fixed 20 per quarter |
+| EBITDA | B7:F7 | =MINUS(gross\_profit, OpEx) |
+
+On that same first turn it writes the header row. Subsequent turns fill one section at a time. Click **Apply** after each preview, or use [Chain Mode](/guides/chain-mode) to apply every step automatically.
+
+## Column alignment — the most important rule
+
+GridOS models use a labelled layout: the first column holds row labels (text), and data starts one column to the right. The agent enforces this, but it helps to understand why.
+
+<Warning>
+  Formulas written in the wrong column produce silent errors. A formula like `=MULTIPLY(B3, 0.4)` in column C of a COGS row references the **label** cell ("Revenue"), not Q1 revenue, and returns 0.
+</Warning>
+
+For a model anchored at column B:
+
+| Column | Content |
+|---|---|
+| B | Row labels — text, not data |
+| C | Q1 data |
+| D | Q2 data |
+| E | Q3 data |
+| F | Q4 data |
+
+The COGS row (anchored at B4) must look like:
+
+```text
+B4 = "COGS"
+C4 = =MULTIPLY(C3, 0.4)   ← Q1 revenue, correct
+D4 = =MULTIPLY(D3, 0.4)   ← Q2 revenue, correct
+E4 = =MULTIPLY(E3, 0.4)   ← Q3 revenue, correct
+F4 = =MULTIPLY(F3, 0.4)   ← Q4 revenue, correct
+```
+
+If the agent makes a column-alignment mistake, GridOS detects it from the formula observations and tells the agent to retry the section with corrected cell references before moving on.
+
+## Common financial formulas
+
+GridOS uses named formula primitives — no infix operators (`+`, `-`, `*`, `/`) are used in cells. Here are the patterns you'll see most often:
+
+<AccordionGroup>
+  <Accordion title="COGS as a percentage of revenue">
+    ```text
+    =MULTIPLY(C3, 0.4)
+    ```
+    COGS at 40% of the revenue value in C3. Replace `0.4` with your margin assumption.
+  </Accordion>
+  <Accordion title="Quarter-over-quarter growth">
+    ```text
+    =MULTIPLY(C3, 1.1)
+    ```
+    10% growth over the previous quarter's value in C3.
+  </Accordion>
+  <Accordion title="Gross profit">
+    ```text
+    =MINUS(C3, C4)
+    ```
+    Revenue in C3 minus COGS in C4.
+  </Accordion>
+  <Accordion title="Gross margin percentage">
+    ```text
+    =DIVIDE(MINUS(C3, C4), C3)
+    ```
+    This nested call is only valid inside a [macro body](/guides/macros). In a grid cell, define a `MARGIN` macro first, then call `=MARGIN(C3, C4)`.
+  </Accordion>
+  <Accordion title="Discounted cash flow">
+    ```text
+    =DIVIDE(C3, MULTIPLY(1.1, 1.1))
+    ```
+    Discounting by 10% over two periods. For longer projections, ask the agent to build the full DCF structure with a terminal value row.
+  </Accordion>
+</AccordionGroup>
+
+## Example prompts to try
+
+```text
+Build a 4-quarter revenue forecast with 10% QoQ growth starting at 100
+```
+
+```text
+Create a simple DCF model with 5 years of free cash flows and a 10% WACC
+```
+
+```text
+Add a monthly budget with headcount, salaries, and a variance column vs. actuals
+```
+
+```text
+Build an income statement: revenue, COGS, gross profit, SG&A, and net income
+```
+
+## Tips for large models
+
+<CardGroup cols={2}>
+  <Card title="Use Chain Mode" icon="link">
+    For models with more than four or five sections, enable [Chain Mode](/guides/chain-mode). The agent auto-applies each section and keeps going until the entire plan is done — no clicking Apply on every step.
+  </Card>
+  <Card title="Start from a template" icon="copy">
+    Built-in templates give you a correct skeleton to extend. Opening **Simple DCF** and then asking the agent to add rows is faster than building from a blank sheet.
+  </Card>
+  <Card title="Define macros for ratios" icon="function">
+    Ratio formulas like gross margin or EBITDA margin repeat across many rows. Define a [macro](/guides/macros) once and call it from every cell — cleaner and less error-prone.
+  </Card>
+  <Card title="Lock your assumptions" icon="lock">
+    After entering your base assumptions, right-click the cells and lock them. The AI can't overwrite locked cells, so your inputs stay safe during subsequent chain runs.
+  </Card>
+</CardGroup>

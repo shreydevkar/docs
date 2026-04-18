@@ -1,0 +1,283 @@
+---
+title: "Create and manage chart overlays via the API"
+description: "List, create, update, and delete chart overlays on any GridOS sheet using the /system/charts endpoints. Supports bar, line, and pie chart types."
+---
+
+GridOS renders charts as overlays anchored to a cell position on a sheet. Each chart reads from a rectangular data range you specify and can be repositioned, resized, or retyped without touching the underlying cell data. The four endpoints below cover the full lifecycle of a chart.
+
+## GET /system/charts
+
+List all charts on a given sheet. If you omit the `sheet` query parameter, GridOS returns charts for the currently active sheet.
+
+### Query Parameters
+
+<ParamField query="sheet" type="string">
+  The sheet whose charts you want to retrieve. Defaults to the active sheet when omitted.
+</ParamField>
+
+### Response
+
+<ResponseField name="charts" type="array of objects">
+  All chart objects on the requested sheet. Each object includes the chart's `id`, `title`, `chart_type`, `data_range`, `anchor_cell`, `width`, `height`, and `orientation`.
+</ResponseField>
+
+### Example
+
+```json
+GET /system/charts?sheet=Income%20Statement
+```
+
+**Response**
+
+```json
+{
+  "charts": [
+    {
+      "id": "chart-a1b2c3",
+      "title": "Revenue by Quarter",
+      "chart_type": "bar",
+      "data_range": "A1:E5",
+      "anchor_cell": "G2",
+      "width": 400,
+      "height": 280,
+      "orientation": "columns"
+    }
+  ]
+}
+```
+
+---
+
+## POST /system/charts
+
+Create a new chart overlay on a sheet. You must supply a `data_range`; all other fields have sensible defaults.
+
+### Request
+
+<ParamField body="data_range" type="string" required>
+  The rectangular cell range that contains the chart data, in A1 notation (e.g. `"A1:B6"`). The range should include both labels and numeric values.
+</ParamField>
+
+<ParamField body="anchor_cell" type="string">
+  The cell where the top-left corner of the chart overlay is pinned. Defaults to `"F2"`. Choose an empty area so the chart does not obscure your data.
+</ParamField>
+
+<ParamField body="chart_type" type="string">
+  The chart type. Accepted values: `"bar"`, `"line"`, `"pie"`. Defaults to `"bar"`.
+</ParamField>
+
+<ParamField body="title" type="string">
+  A display title rendered above the chart. Defaults to an empty string (no title shown).
+</ParamField>
+
+<ParamField body="width" type="integer">
+  Chart width in pixels. Defaults to `400`.
+</ParamField>
+
+<ParamField body="height" type="integer">
+  Chart height in pixels. Defaults to `280`.
+</ParamField>
+
+<ParamField body="orientation" type="string">
+  Controls how the data range is read. `"columns"` means the first column contains labels and subsequent columns are series (typical). `"rows"` means the first row contains labels. Defaults to `"columns"`.
+</ParamField>
+
+<ParamField body="sheet" type="string">
+  The sheet on which to create the chart. Defaults to the active sheet when omitted.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  `"Success"` when the chart was created.
+</ResponseField>
+
+<ResponseField name="chart" type="object">
+  The full chart object including the system-assigned `id` and all resolved field values.
+</ResponseField>
+
+### Errors
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | The chart could not be created (e.g. invalid data range or chart type). |
+
+### Example
+
+```json
+POST /system/charts
+{
+  "anchor_cell": "H2",
+  "data_range": "A1:E5",
+  "chart_type": "line",
+  "title": "Revenue by Quarter",
+  "width": 500,
+  "height": 320,
+  "orientation": "columns",
+  "sheet": "Income Statement"
+}
+```
+
+**Response**
+
+```json
+{
+  "status": "Success",
+  "chart": {
+    "id": "chart-a1b2c3",
+    "title": "Revenue by Quarter",
+    "chart_type": "line",
+    "data_range": "A1:E5",
+    "anchor_cell": "H2",
+    "width": 500,
+    "height": 320,
+    "orientation": "columns"
+  }
+}
+```
+
+<Note>
+  Chart IDs are assigned by the server at creation time. Store the returned `id` if you need to update or delete the chart later.
+</Note>
+
+---
+
+## PATCH /system/charts/{chart_id}
+
+Update one or more properties of an existing chart. Send only the fields you want to change — all other fields remain as they are.
+
+### Path Parameters
+
+<ParamField path="chart_id" type="string" required>
+  The unique identifier of the chart to update, as returned by `POST /system/charts` or `GET /system/charts`.
+</ParamField>
+
+### Request
+
+All body fields are optional. Only the fields you include are applied.
+
+<ParamField body="anchor_cell" type="string">
+  Move the chart to a new anchor cell.
+</ParamField>
+
+<ParamField body="data_range" type="string">
+  Change the data range the chart reads from.
+</ParamField>
+
+<ParamField body="chart_type" type="string">
+  Change the chart type. Accepted values: `"bar"`, `"line"`, `"pie"`.
+</ParamField>
+
+<ParamField body="title" type="string">
+  Update the chart title.
+</ParamField>
+
+<ParamField body="width" type="integer">
+  New width in pixels.
+</ParamField>
+
+<ParamField body="height" type="integer">
+  New height in pixels.
+</ParamField>
+
+<ParamField body="orientation" type="string">
+  Change between `"columns"` and `"rows"` orientation.
+</ParamField>
+
+<ParamField body="sheet" type="string">
+  The sheet on which the chart lives. Required when the chart is not on the active sheet.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  `"Success"` when the chart was updated.
+</ResponseField>
+
+<ResponseField name="chart" type="object">
+  The full updated chart object.
+</ResponseField>
+
+### Errors
+
+| Status | Meaning |
+|--------|---------|
+| `404`  | No chart with the given `chart_id` was found on the specified (or active) sheet. |
+| `400`  | The update payload is invalid (e.g. unrecognised chart type). |
+
+### Example
+
+```json
+PATCH /system/charts/chart-a1b2c3
+{
+  "chart_type": "pie",
+  "title": "Revenue Share by Quarter",
+  "anchor_cell": "J4"
+}
+```
+
+**Response**
+
+```json
+{
+  "status": "Success",
+  "chart": {
+    "id": "chart-a1b2c3",
+    "title": "Revenue Share by Quarter",
+    "chart_type": "pie",
+    "data_range": "A1:E5",
+    "anchor_cell": "J4",
+    "width": 500,
+    "height": 320,
+    "orientation": "columns"
+  }
+}
+```
+
+---
+
+## DELETE /system/charts/{chart_id}
+
+Permanently remove a chart overlay from a sheet. The underlying cell data referenced by the chart is not affected.
+
+### Path Parameters
+
+<ParamField path="chart_id" type="string" required>
+  The unique identifier of the chart to delete.
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="sheet" type="string">
+  The sheet on which to look for the chart. Defaults to the active sheet when omitted.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  `"Success"` when the chart was deleted.
+</ResponseField>
+
+### Errors
+
+| Status | Meaning |
+|--------|---------|
+| `404`  | No chart with the given `chart_id` was found on the specified (or active) sheet. |
+
+### Example
+
+```json
+DELETE /system/charts/chart-a1b2c3?sheet=Income%20Statement
+```
+
+**Response**
+
+```json
+{
+  "status": "Success"
+}
+```
+
+<Warning>
+  Chart deletion is permanent and cannot be undone via the API. Save your workbook state with `POST /system/save` before bulk-deleting charts if you want a recovery point.
+</Warning>

@@ -1,0 +1,148 @@
+---
+title: "Connect your AI provider API keys to GridOS"
+description: "Add API keys for Google Gemini, Anthropic Claude, Groq, or OpenRouter to GridOS using the in-app settings panel or a .env file to unlock the model picker."
+---
+
+GridOS uses a bring-your-own-key model: it never ships with a bundled API key, and the model picker in the chat composer only lists models whose provider has a valid key configured. This page explains both methods for adding keys — the in-app settings UI and the `.env` file — covers the four supported providers and how to get a key for each, and describes what happens when a key is rejected.
+
+## Which provider should you use?
+
+<CardGroup cols={2}>
+  <Card title="Groq — recommended for development" icon="bolt" href="https://console.groq.com">
+    Genuinely free with no credit card required. Runs GPT-OSS 120B and Llama models at up to ~1000 tokens/sec. The fastest way to get started. Sign up at console.groq.com.
+  </Card>
+  <Card title="Google Gemini — free tier" icon="google" href="https://aistudio.google.com/app/apikey">
+    Free tier available at Google AI Studio. Gemini 3.1 Flash Lite is fast and generous; Gemini 3.1 Pro offers higher quality at higher cost.
+  </Card>
+  <Card title="Anthropic Claude — quality reasoning" icon="robot" href="https://console.anthropic.com">
+    Haiku 4.5 (fast/cheap), Sonnet 4.6 (balanced), and Opus 4.7 (highest quality). Requires an Anthropic Console account with credits; new accounts start with $5.
+  </Card>
+  <Card title="OpenRouter — free model access" icon="shuffle" href="https://openrouter.ai">
+    Routes to free models including Hermes 3 Llama 3.1 405B and Llama 3.3 70B. Good fallback option; free models are occasionally rate-limited or flaky.
+  </Card>
+</CardGroup>
+
+<Tip>
+  Start with **Groq**. It is the only provider that is completely free with no credit card, and its GPT-OSS 120B model produces reliable structured JSON output — which is exactly what GridOS needs for cell writes.
+</Tip>
+
+You can configure multiple providers at the same time. The model picker will list every model whose provider has a valid key.
+
+## Method 1: In-app settings (recommended)
+
+The settings panel stores keys in `data/api_keys.json`, which is gitignored. Keys saved here persist across server restarts and are never exposed in source control.
+
+<Steps>
+  <Step title="Start the GridOS server">
+    If the server is not already running, start it:
+
+    ```bash
+    uvicorn main:app --reload
+    ```
+
+    Open [http://127.0.0.1:8000](http://127.0.0.1:8000) in your browser.
+  </Step>
+
+  <Step title="Open the Settings panel">
+    Click the **gear icon** in the top menubar. The Settings panel slides open and shows a field for each supported provider: Google Gemini, Anthropic Claude, Groq, and OpenRouter.
+  </Step>
+
+  <Step title="Paste your API key and save">
+    Paste your key into the field for the provider you want to configure, then click **Save**. GridOS writes the key to `data/api_keys.json` and immediately instantiates a client for that provider.
+
+    The model picker in the chat composer updates on the next interaction — no page reload required.
+  </Step>
+</Steps>
+
+<Note>
+  `data/api_keys.json` is listed in `.gitignore`. Your keys will not be committed if you run `git add .` inside the repo.
+</Note>
+
+## Method 2: `.env` file
+
+The `.env` file method is useful for scripted setups, Docker environments, or when you want to set keys before starting the server for the first time. Keys in `.env` act as a fallback: if a provider has a key saved in `data/api_keys.json`, the `.env` value for that provider is ignored.
+
+Create a file named `.env` in the repo root (alongside `main.py`):
+
+```bash
+GOOGLE_API_KEY=your_gemini_key_here
+ANTHROPIC_API_KEY=your_claude_key_here
+GROQ_API_KEY=your_groq_key_here
+OPENROUTER_API_KEY=your_openrouter_key_here
+```
+
+You only need to include the variables for providers you are actually using. Restart the server after creating or editing `.env`:
+
+```bash
+uvicorn main:app --reload
+```
+
+<Warning>
+  Never commit `.env` to source control. Add it to `.gitignore` if it is not already listed. The `.env.example` file in the repo shows the variable names without values and is safe to commit.
+</Warning>
+
+## Environment variable reference
+
+| Variable | Provider |
+| :--- | :--- |
+| `GOOGLE_API_KEY` | Google Gemini |
+| `ANTHROPIC_API_KEY` | Anthropic Claude |
+| `GROQ_API_KEY` | Groq |
+| `OPENROUTER_API_KEY` | OpenRouter |
+
+## Available models by provider
+
+Once a key is configured, the following models become available in the chat composer:
+
+<CodeGroup>
+
+```text Groq (free)
+openai/gpt-oss-120b      — GPT-OSS 120B; best instruction-following, ~500 tps
+openai/gpt-oss-20b       — GPT-OSS 20B; fastest option, ~1000 tps
+qwen/qwen3-32b           — Qwen3 32B; strong structured output (preview)
+llama-3.3-70b-versatile  — Llama 3.3 70B; capable, occasionally prose-prefixes JSON
+llama-3.1-8b-instant     — Llama 3.1 8B; tiny and instant, used for classifier calls
+```
+
+```text Google Gemini
+gemini-3.1-flash-lite-preview  — Fast + cheap; default routing model
+gemini-3.1-pro                 — Higher quality, slower
+```
+
+```text Anthropic Claude
+claude-haiku-4-5-20251001  — Fast and cheap
+claude-sonnet-4-6          — Balanced reasoning at mid cost
+claude-opus-4-7            — Most capable; best for complex models
+```
+
+```text OpenRouter (free models)
+nousresearch/hermes-3-llama-3.1-405b:free  — Free 405B reasoning model
+meta-llama/llama-3.3-70b-instruct:free     — Free Llama 3.3 70B
+meta-llama/llama-3.2-3b-instruct:free      — Free tiny Llama; good for quick edits
+openrouter/free                             — Auto-routes to a working free model
+```
+
+</CodeGroup>
+
+<Info>
+  The router/classifier call inside GridOS is always pinned to the fastest available small model (GPT-OSS 20B → Llama 3.1 8B → Gemini Flash Lite → Claude Haiku), regardless of the model you select in the dropdown. Your selected model drives the actual agent call.
+</Info>
+
+## What happens when a key is rejected
+
+If you paste an invalid or expired key, the provider client is initialized but the first API call returns a 401 or 403. GridOS surfaces a clear error to the chat composer — the sheet is never modified.
+
+Signs of a bad key:
+
+- The chat composer shows an error mentioning "unauthorized", "invalid API key", or "authentication"
+- The model picker may still list models for that provider (the key is stored, but calls fail at runtime)
+
+To fix it, open the Settings panel, paste the correct key, and save. The provider client is rebuilt immediately.
+
+<Warning>
+  Rate limit errors (HTTP 429) are transient and different from auth errors. If you see a rate limit message, wait a few seconds and retry. Groq's free tier is generous but does have per-minute token limits.
+</Warning>
+
+## Adding more models
+
+GridOS reads the model catalog from `core/providers/catalog.py`. To add a model that a provider already supports, append an entry to `MODEL_CATALOG` with the correct `id`, `provider`, `display_name`, and `description` fields. The UI picks it up on the next page load as long as the owning provider has a configured key.

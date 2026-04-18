@@ -1,0 +1,190 @@
+---
+title: "POST /agent/chat/chain — run the agent in a loop"
+description: "Run the GridOS agent in an autonomous loop that applies writes and observes formula results between steps, up to a configurable maximum iteration count."
+---
+
+Use this endpoint when you want GridOS to build something complex — a multi-section financial model, a DCF analysis, a full operating forecast — without you manually calling apply after each step. The chain endpoint drives the full write loop automatically: it calls the agent, applies the result, reads back any formula values from the newly written cells, feeds those observations into the next prompt, and repeats until the agent signals completion or `max_iterations` is reached. Use `POST /agent/chat` + `POST /agent/apply` instead when you want to review each write before it lands.
+
+<Info>
+  On the first turn, the agent may emit a `plan` object describing the full build — sections, target ranges, and notes. The chain loop uses this plan to drive subsequent turns, writing one section at a time and retrying any section that has column-alignment warnings before advancing.
+</Info>
+
+## Request
+
+<ParamField body="prompt" type="string" required>
+  The natural-language instruction describing the full task. Be as specific as possible — the agent uses this prompt on every iteration to understand the original goal.
+</ParamField>
+
+<ParamField body="max_iterations" type="integer" default="10">
+  Maximum number of auto-apply steps. Must be between `1` and `10` (values above `10` are clamped). Each iteration corresponds to one agent call and one write to the sheet. The loop may stop before this limit if the agent signals completion.
+</ParamField>
+
+<ParamField body="history" type="array">
+  Prior conversation turns, ordered oldest-first. Each element must have a `role` field (`"user"` or `"assistant"`) and a `content` field (string). The chain manages its own internal history across iterations, but you can seed it with earlier context here.
+</ParamField>
+
+<ParamField body="scope" type="string" default="sheet">
+  Controls which cells the agent can see.
+
+  - `"sheet"` — the entire active sheet (default)
+  - `"selection"` — only the cells listed in `selected_cells`
+</ParamField>
+
+<ParamField body="selected_cells" type="array">
+  A list of cell addresses in A1 notation that are currently selected in the UI, for example `["B2"]`. Used as an anchor hint when `scope` is `"selection"`.
+</ParamField>
+
+<ParamField body="sheet" type="string">
+  Name of the sheet to target. Defaults to the active sheet when omitted.
+</ParamField>
+
+<ParamField body="model_id" type="string">
+  The LLM model ID to use for every step in the chain. When omitted, GridOS selects the best available model.
+</ParamField>
+
+## Response
+
+<ResponseField name="sheet" type="string">
+  The name of the sheet that was written to across all iterations.
+</ResponseField>
+
+<ResponseField name="steps" type="array">
+  An array of step objects, one per iteration. Each step contains:
+
+  <ResponseField name="steps[].iteration" type="integer">
+    Zero-based index of this step within the chain run.
+  </ResponseField>
+
+  <ResponseField name="steps[].agent_id" type="string">
+    The agent that handled this step (for example `"finance"` or `"general"`).
+  </ResponseField>
+
+  <ResponseField name="steps[].reasoning" type="string">
+    The agent's explanation of what it wrote in this step.
+  </ResponseField>
+
+  <ResponseField name="steps[].target" type="string">
+    The cell address where data was actually written for this step, in A1 notation.
+  </ResponseField>
+
+  <ResponseField name="steps[].values" type="array">
+    The 2-D array of values written in this step.
+  </ResponseField>
+
+  <ResponseField name="steps[].observations" type="array">
+    Formula cell results read back after the write. Each observation has:
+    - `cell` — A1 address
+    - `value` — the computed value after formulas evaluated
+    - `formula` — the formula string if the cell is formula-driven, otherwise `null`
+    - `warning` — a string describing a column-alignment issue if one was detected, otherwise `null`
+  </ResponseField>
+
+  <ResponseField name="steps[].completion_signal" type="boolean">
+    `true` if the agent signaled that the task is fully complete on this step (by returning an empty-string grid). The chain stops immediately when this is `true`.
+  </ResponseField>
+
+  <ResponseField name="steps[].chart" type="object | null">
+    The chart object created during this step, or `null` if no chart was requested.
+  </ResponseField>
+
+  <ResponseField name="steps[].chart_error" type="string | null">
+    An error message if chart creation failed on this step, otherwise `null`.
+  </ResponseField>
+
+  <ResponseField name="steps[].proposed_macro" type="object | null">
+    A macro proposal from the agent on this step, or `null`. Proposed macros are not saved automatically.
+  </ResponseField>
+
+  <ResponseField name="steps[].plan" type="object | null">
+    The multi-section build plan, present only on the first step when the agent emits one. `null` on all subsequent steps.
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="iterations_used" type="integer">
+  The total number of steps that ran. Equal to `steps.length`.
+</ResponseField>
+
+<ResponseField name="terminated_early" type="boolean">
+  `true` if the loop ended before reaching `max_iterations` — either because the agent signaled completion or because there was no remaining work detected. `false` if the loop ran to the iteration limit.
+</ResponseField>
+
+<Warning>
+  The chain applies each write immediately and without user confirmation. For large financial models, review the completed sheet carefully and use `POST /grid/cell` or the clear endpoint to correct any cells that were written incorrectly.
+</Warning>
+
+## Example
+
+### Request
+
+```json
+{
+  "prompt": "Build a 3-section quarterly operating model: a header row in B2:F2 (Metric, Q1, Q2, Q3, Q4), Revenue in B3:F3 starting at 100 with 10% QoQ growth, and COGS in B4:F4 at 40% of revenue.",
+  "max_iterations": 10,
+  "history": [],
+  "scope": "sheet",
+  "selected_cells": ["B2"],
+  "sheet": "Sheet1"
+}
+```
+
+### Response (abbreviated — 2 of 3 steps shown)
+
+```json
+{
+  "sheet": "Sheet1",
+  "steps": [
+    {
+      "iteration": 0,
+      "agent_id": "finance",
+      "reasoning": "Writing the header row first as declared in the plan.",
+      "target": "B2",
+      "values": [["Metric", "Q1", "Q2", "Q3", "Q4"]],
+      "observations": [
+        { "cell": "B2", "value": "Metric", "formula": null, "warning": null },
+        { "cell": "C2", "value": "Q1",     "formula": null, "warning": null },
+        { "cell": "D2", "value": "Q2",     "formula": null, "warning": null },
+        { "cell": "E2", "value": "Q3",     "formula": null, "warning": null },
+        { "cell": "F2", "value": "Q4",     "formula": null, "warning": null }
+      ],
+      "completion_signal": false,
+      "chart": null,
+      "chart_error": null,
+      "proposed_macro": null,
+      "plan": {
+        "title": "Quarterly Operating Model",
+        "anchor": "B2",
+        "sections": [
+          { "label": "Header row", "target": "B2:F2", "notes": "Metric, Q1–Q4" },
+          { "label": "Revenue",    "target": "B3:F3", "notes": "10% QoQ growth from 100" },
+          { "label": "COGS",       "target": "B4:F4", "notes": "40% of revenue" }
+        ]
+      }
+    },
+    {
+      "iteration": 1,
+      "agent_id": "finance",
+      "reasoning": "Writing the Revenue row: base 100 in C3, then 10% QoQ growth in D3–F3.",
+      "target": "B3",
+      "values": [["Revenue", 100, 110, 121, 133.1]],
+      "observations": [
+        { "cell": "B3", "value": "Revenue", "formula": null,            "warning": null },
+        { "cell": "C3", "value": 100,        "formula": null,            "warning": null },
+        { "cell": "D3", "value": 110,        "formula": null,            "warning": null },
+        { "cell": "E3", "value": 121,        "formula": null,            "warning": null },
+        { "cell": "F3", "value": 133.1,      "formula": null,            "warning": null }
+      ],
+      "completion_signal": false,
+      "chart": null,
+      "chart_error": null,
+      "proposed_macro": null,
+      "plan": null
+    }
+  ],
+  "iterations_used": 3,
+  "terminated_early": true
+}
+```
+
+<Info>
+  `terminated_early: true` here means the loop finished before the 10-iteration cap — the agent signaled completion on step 3 (the COGS row), which is not shown in this abbreviated example. A `completion_signal: true` step is always the last entry in `steps`.
+</Info>

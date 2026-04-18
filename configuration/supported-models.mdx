@@ -1,0 +1,82 @@
+---
+title: "Supported AI models and providers in GridOS"
+description: "Browse all 14 AI models available in GridOS across Google Gemini, Anthropic Claude, Groq, and OpenRouter. Learn how to select models and add your own."
+---
+
+GridOS supports 14 models across four providers. Once you configure an API key for a provider, every model from that provider appears in the model picker dropdown in the chat composer. You can switch models between requests without restarting the server.
+
+## Model catalog
+
+| Model ID | Provider | Notes |
+|:---|:---|:---|
+| `gemini-3.1-flash-lite-preview` | Google Gemini | Fast, generous free tier — good daily driver |
+| `gemini-3.1-pro` | Google Gemini | Higher quality, slower |
+| `claude-haiku-4-5-20251001` | Anthropic | Cheap and fast |
+| `claude-sonnet-4-6` | Anthropic | Balanced quality and speed |
+| `claude-opus-4-7` | Anthropic | Best quality, slowest |
+| `openai/gpt-oss-120b` | Groq | ~500 tps — strongest free model for strict JSON output |
+| `openai/gpt-oss-20b` | Groq | ~1000 tps — fastest Groq option, used for the router call |
+| `qwen/qwen3-32b` | Groq | Preview; strong at structured output |
+| `llama-3.3-70b-versatile` | Groq | Capable; occasionally prefaces JSON with prose |
+| `llama-3.1-8b-instant` | Groq | Tiny and instant; great for classifiers |
+| `nousresearch/hermes-3-llama-3.1-405b:free` | OpenRouter | Free 405B reasoning model |
+| `meta-llama/llama-3.3-70b-instruct:free` | OpenRouter | Free Llama 70B |
+| `meta-llama/llama-3.2-3b-instruct:free` | OpenRouter | Free and tiny |
+| `openrouter/free` | OpenRouter | Meta-router — auto-picks a working free model |
+
+## Selecting a model
+
+Open the chat composer at the bottom of the workbook view. The model picker dropdown is embedded in the composer — click it to see the models available for your configured providers. Select any model and your next chat message uses it. The selection persists for the session.
+
+<Note>
+  The model picker only shows models whose provider has a configured API key. If you expect to see a model but it is missing, check that the corresponding provider key is saved in Settings.
+</Note>
+
+## The router model
+
+GridOS uses a separate, faster model for intent classification — deciding which agent (general or finance-specialised) should handle your prompt. This router call is automatically pinned to the fastest small model that has a configured key, in this order of preference:
+
+1. `openai/gpt-oss-20b` (Groq, ~1000 tps)
+2. `llama-3.1-8b-instant` (Groq, ~560 tps)
+3. `gemini-3.1-flash-lite-preview` (Google Gemini)
+4. `claude-haiku-4-5-20251001` (Anthropic)
+
+The router call is transparent to you — it never uses your selected model and does not affect the quality of grid edits. Only the agent call (the one that actually writes cells) uses the model you chose in the picker.
+
+## Adding models
+
+Self-hosted users can add models by editing `core/providers/catalog.py`. Append an entry to `MODEL_CATALOG` following this shape:
+
+```python
+{
+    "id": "model-id-sent-to-provider-sdk",
+    "provider": "gemini",  # one of: gemini | anthropic | groq | openrouter
+    "display_name": "Human-readable name",
+    "description": "Short description shown in the UI.",
+}
+```
+
+The UI picks up new entries on the next page load, as long as the owning provider has a configured key.
+
+<Tabs>
+  <Tab title="Groq example">
+    ```python
+    {
+        "id": "llama-3.1-70b-versatile",
+        "provider": "groq",
+        "display_name": "Llama 3.1 70B (Groq)",
+        "description": "Llama 3.1 70B via Groq.",
+    }
+    ```
+  </Tab>
+  <Tab title="OpenRouter example">
+    ```python
+    {
+        "id": "mistralai/mistral-7b-instruct:free",
+        "provider": "openrouter",
+        "display_name": "Mistral 7B (free)",
+        "description": "Free Mistral 7B via OpenRouter.",
+    }
+    ```
+  </Tab>
+</Tabs>

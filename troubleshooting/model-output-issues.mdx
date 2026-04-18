@@ -1,0 +1,80 @@
+---
+title: "Troubleshoot AI model output problems in GridOS"
+description: "Fix GridOS model output problems: non-JSON responses, token cap hits, flaky providers, column alignment bugs, #DIV/0! guard triggers, and empty model pickers."
+---
+
+GridOS depends on models returning structured JSON. When a model returns unexpected output — prose instead of JSON, truncated content, or formulas referencing the wrong cells — GridOS surfaces a clear error or warning. Use the reference below to diagnose and resolve the issue.
+
+<AccordionGroup>
+  <Accordion title="Model returned non-JSON output (422)">
+    **What it means:** The model prepended prose to its JSON response (for example, "Sure! Here's the data:" followed by the JSON). GridOS attempts to extract the first balanced JSON object automatically, but the extraction failed or the extracted JSON was malformed.
+
+    This is most common with smaller open-weight models like `llama-3.3-70b-versatile` and some OpenRouter free models, especially on complex multi-section prompts.
+
+    **How to fix it:**
+
+    - Switch to a stronger model in the chat composer model picker. Gemini and Claude models have much more reliable JSON output. `openai/gpt-oss-120b` on Groq is the strongest free option for strict JSON.
+    - Rephrase your prompt to be more explicit: *"Return only valid JSON with no explanation."*
+    - Break a complex multi-section request into smaller steps so the model has less to generate per turn.
+  </Accordion>
+
+  <Accordion title="Model hit the output-token cap">
+    **What it means:** The model's response was cut off because it reached the maximum output token limit. GridOS detects a `finish_reason` of `length` or `MAX_TOKENS` and surfaces a specific message: *"hit the output-token cap — try a shorter prompt or a model with more headroom."*
+
+    **How to fix it:**
+
+    - Shorten your prompt. Long conversation histories and large grid snapshots consume input tokens, leaving less room for the response.
+    - Switch to a model with a larger output context window. Claude Sonnet and Opus have more headroom than smaller Groq or OpenRouter free models.
+    - Break your request into smaller steps: ask the agent to build one section at a time rather than the entire sheet in one turn.
+  </Accordion>
+
+  <Accordion title="Groq or OpenRouter returns errors intermittently">
+    **What it means:** Groq and OpenRouter free tiers experience occasional rate limits, server overloads, and gateway timeouts — especially during peak hours. GridOS retries four times with exponential backoff, but some transient failures persist past the retry window.
+
+    **How to fix it:**
+
+    - Wait a moment and retry the same prompt. Most transient errors resolve within seconds.
+    - Switch to a different provider in the model picker while the affected provider recovers. For example, switch from `openai/gpt-oss-120b` (Groq) to `gemini-3.1-flash-lite-preview` (Google Gemini).
+    - If OpenRouter's free router (`openrouter/free`) is flaky, try selecting a specific OpenRouter model instead.
+  </Accordion>
+
+  <Accordion title='Column alignment bug: formulas show #VALUE! or 0'>
+    **What it means:** A formula in a data column is referencing a label column instead of a data column — an off-by-one mistake the agent occasionally makes on labeled rows. For example, a formula in column C computes `=SUM(B3:B6)` but B is the label column, so the result is 0 or `#VALUE!`.
+
+    GridOS detects this after writing and attaches a warning to the affected cells in the chain observation log.
+
+    **How to fix it:**
+
+    Ask the agent to fix the column alignment explicitly:
+
+    *"The formula in C4 is referencing column B which contains labels. Fix it to reference the data in column C instead."*
+
+    In chain mode, GridOS automatically feeds the column alignment warning back to the agent and asks it to re-emit the same section with corrected formulas before advancing to the next section. You can also correct the formula manually by clicking the cell and retyping it.
+  </Accordion>
+
+  <Accordion title="#DIV/0! guard triggers before the write is applied">
+    **What it means:** The pre-apply formula guard detected that one or more of the agent's proposed formulas reference empty cells. Applying them would produce `#DIV/0!` errors or misleading zeros, so GridOS blocked the entire write.
+
+    This is a protective block — nothing was written to the sheet. The error message lists the formula cells and their empty references.
+
+    **How to fix it:**
+
+    Fill the referenced cells first. You have two options:
+
+    - **Manual fill:** Type values into the empty cells shown in the error message, then re-send your original prompt.
+    - **Re-ask the agent:** Ask the agent to populate the input cells in the same response: *"Fill in the baseline values in C3 and B3, then add the formula in C4 that divides them."*
+
+    Once the referenced cells contain values, the formula guard passes and the write is applied.
+  </Accordion>
+
+  <Accordion title="Model picker shows no models">
+    **What it means:** No API keys are configured. The model picker only lists models for providers that have a valid key saved in GridOS. An empty picker means GridOS has no configured providers.
+
+    **How to fix it:**
+
+    1. Click the gear icon in the menubar to open Settings.
+    2. Add an API key for at least one provider. Groq is free and requires no credit card — sign up at [console.groq.com](https://console.groq.com) and paste the key into the Groq field.
+    3. Save and close Settings.
+    4. The model picker now shows models for that provider. You are ready to chat.
+  </Accordion>
+</AccordionGroup>

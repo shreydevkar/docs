@@ -1,0 +1,63 @@
+---
+title: "GridOS: AI-powered spreadsheet for everyone"
+description: "GridOS lets you build, edit, and analyze spreadsheets by chatting with AI. Bring your own key from Gemini, Claude, Groq, or OpenRouter."
+---
+
+GridOS is an agentic spreadsheet that pairs a deterministic grid kernel with the LLM of your choice. Describe what you want — a revenue forecast, a budget tracker, a break-even model — and the AI writes, formulas, charts, and data directly into your workbook. Every AI action goes through a preview step before it touches your sheet, so you stay in control.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Set up GridOS and build your first AI-powered workbook in under five minutes.
+  </Card>
+  <Card title="Add API Keys" icon="key" href="/api-keys">
+    Connect Gemini, Claude, Groq, or OpenRouter to unlock AI features.
+  </Card>
+  <Card title="Core Concepts" icon="book-open" href="/concepts/workbook">
+    Understand workbooks, sheets, agents, and the preview/apply flow.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/agent-chat">
+    Explore the full REST API — chat, apply, chain, and manage workbooks.
+  </Card>
+</CardGroup>
+
+## How GridOS works
+
+GridOS combines a reliable Python grid engine with AI agents that read your sheet, plan their writes, and propose changes for you to approve or dismiss.
+
+<Steps>
+  <Step title="Start the server">
+    Clone the repo, install dependencies, and run `uvicorn main:app --reload`. Open `http://127.0.0.1:8000`.
+  </Step>
+  <Step title="Add an API key">
+    Click the gear icon in the top menu bar. Paste a key for any one provider — Gemini, Claude, Groq, or OpenRouter. You only need one to get started.
+  </Step>
+  <Step title="Describe your workbook">
+    On the landing page, type what you want to build — "Monthly budget with 6 months of actuals" — and press Enter. GridOS routes your prompt, builds a plan, and populates the sheet.
+  </Step>
+  <Step title="Review and apply">
+    Each AI suggestion appears as a preview card in the chat thread. Click **Apply** to commit cells to the grid, or **Dismiss** to skip. Your audit trail stays visible in the thread.
+  </Step>
+</Steps>
+
+## Key features
+
+<CardGroup cols={2}>
+  <Card title="Multi-provider AI" icon="brain" href="/configuration/llm-providers">
+    Switch between Gemini, Claude, Groq, and OpenRouter models per request from the chat composer.
+  </Card>
+  <Card title="Formula synthesis" icon="function" href="/concepts/formulas">
+    Natural-language prompts become executable grid formulas with collision-safe cell placement.
+  </Card>
+  <Card title="Chain mode" icon="link" href="/guides/chain-mode">
+    Let the agent auto-apply a multi-step plan end-to-end, observing formula results between steps.
+  </Card>
+  <Card title="Templates" icon="copy" href="/guides/templates">
+    Start from built-in models: DCF, Monthly Budget, Break-Even, Loan Amortization, Income Statement.
+  </Card>
+  <Card title="Charts" icon="chart-bar" href="/guides/charts">
+    Ask for a chart in plain English — bar, line, or pie — anchored wherever you want on the sheet.
+  </Card>
+  <Card title="Custom macros" icon="puzzle-piece" href="/guides/macros">
+    Define reusable named formulas that the AI can propose and you can approve with one click.
+  </Card>
+</CardGroup>

@@ -1,0 +1,97 @@
+---
+title: "Preview and apply: review AI edits before they land"
+description: "See how GridOS lets you inspect every AI-proposed cell write before it commits, with automatic collision handling, formula guards, and a permanent audit trail."
+---
+
+GridOS never writes AI-generated content directly to your sheet. Every agent response goes through a **preview/apply flow** that shows you exactly what will change — and where — before anything is committed. This page explains that flow in detail, including how collision resolution, formula safety guards, and the audit trail work together to keep your data trustworthy.
+
+## The preview/apply flow
+
+<Steps>
+  <Step title="You send a prompt">
+    Type your request in the chat composer and press Enter. GridOS routes the prompt to the appropriate agent, which reads the current grid state and generates a structured JSON response containing a target cell, a 2D array of values, and optional chart or macro proposals.
+  </Step>
+  <Step title="The kernel computes a preview">
+    Before showing you anything, the kernel runs two checks:
+    - **Collision resolution** — if the agent's target overlaps occupied or locked cells, the kernel shifts the write to the nearest free area automatically.
+    - **Formula dependency guard** — if any proposed formula references an empty cell, the kernel rejects the preview entirely with a clear error message rather than letting `#DIV/0!` land on your sheet.
+  </Step>
+  <Step title="A preview card appears in chat">
+    The chat thread displays a **preview card** listing every cell that will be written and its new value. Cells are shown at their resolved (possibly shifted) addresses — so you see exactly where the data will land, not just where the agent aimed.
+  </Step>
+  <Step title="You click Apply or Dismiss">
+    - **Apply** commits all listed writes to the sheet immediately. The preview card freezes with an **APPLIED** badge.
+    - **Dismiss** discards the proposal. The preview card freezes with a **DISMISSED** badge. Nothing changes on the sheet.
+  </Step>
+</Steps>
+
+## Preview card badges
+
+After you act on a preview, its card is permanently frozen in the chat thread with a colored badge so you can trace the history of every AI decision.
+
+| Badge | Color | Meaning |
+| :---- | :---- | :------ |
+| **APPLIED** | Green | The writes were committed to the sheet. |
+| **DISMISSED** | Gray | The proposal was discarded; the sheet was not changed. |
+| **SUPERSEDED** | Yellow | A later agent turn proposed new writes to the same region before you acted on this card. This card is no longer actionable. |
+
+<Info>
+  Badges are permanent — you cannot re-apply a dismissed card or re-dismiss an applied one. If you want to undo an applied write, edit the affected cells manually or ask the agent to overwrite them.
+</Info>
+
+## Pre-apply formula guard
+
+The formula guard runs automatically every time the kernel evaluates a preview. It inspects each proposed formula, resolves all its cell references, and checks whether those cells are currently empty.
+
+If any proposed formula would read an empty cell as an input — and that empty cell is not also being written in the same batch — the kernel raises a `422` error and surfaces a clear message in the chat:
+
+```
+The agent proposed formulas whose inputs are empty — applying would produce
+#DIV/0! or misleading zeros. Re-ask the agent to also populate the referenced
+cells, or fill them yourself first.
+  - C4 (=DIVIDE(C3, D3)) references empty cell(s): D3
+```
+
+<Tip>
+  If you see this error, you have two options: ask the agent again and tell it to include the missing input cells in the same turn, or fill the empty cells yourself and then re-send the original prompt.
+</Tip>
+
+## Collision resolution
+
+When an agent targets a cell range that is already occupied or locked, GridOS does not overwrite the existing data. Instead, the kernel's **shift logic** moves the incoming write one step at a time in the shift direction (right by default, or down) until it finds a free rectangular area large enough to fit the payload.
+
+The preview card always shows the **resolved address** — the actual cell where the write will land after shifting. The agent's original requested target is shown separately so you can see how much the placement moved.
+
+<AccordionGroup>
+  <Accordion title="Shift direction">
+    Each agent response includes a `shift_direction` field set to either `right` (shift across columns) or `down` (shift down rows). The kernel uses this when scanning for a free slot. If no free slot is found within 500 steps, the write is rejected with an `ERROR_NO_SPACE` status.
+  </Accordion>
+  <Accordion title="Locked cells">
+    Locked cells are treated as permanently occupied. The shift algorithm skips over them and keeps searching. An agent can never overwrite a locked cell, even if collision resolution would place the write there.
+  </Accordion>
+  <Accordion title="Partial collisions">
+    If only some cells in the payload region are occupied, the entire payload still shifts — GridOS never splits a rectangular write across non-contiguous positions.
+  </Accordion>
+</AccordionGroup>
+
+## Apply vs. Dismiss
+
+| Action | Effect on the sheet | Effect on the chat thread |
+| :----- | :------------------ | :------------------------ |
+| **Apply** | All preview cells are written to the active sheet. Formulas recalculate. Charts and macros in the same response are also committed. | Preview card freezes with **APPLIED** badge. The agent's reasoning remains visible. |
+| **Dismiss** | No changes are made. | Preview card freezes with **DISMISSED** badge. You can continue chatting to request a different approach. |
+
+## The audit trail
+
+Every preview card — applied, dismissed, or superseded — stays in the chat thread for the entire session. This gives you a complete record of:
+
+- What the agent proposed (the reasoning field and the cell list)
+- Which model generated the response
+- What you decided to do with it
+- The exact cell addresses where changes landed
+
+The audit trail is in-memory only: it resets when you start a new workbook or reload the page. If you need a persistent record, save your workbook (which captures the final cell state) and note the conversation summary separately.
+
+<Note>
+  In **chain mode**, GridOS auto-applies each step without waiting for your click, observes formula results between steps, and continues until the full plan is complete. Each step still gets its own preview card with an **APPLIED** badge, so the audit trail is preserved even in fully automated runs.
+</Note>

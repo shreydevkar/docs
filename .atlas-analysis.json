@@ -1,0 +1,132 @@
+{
+  "projectType": "saas",
+  "projectName": "GridOS",
+  "projectDescription": "An agentic spreadsheet that lets you build and edit workbooks by chatting with AI — powered by your choice of Gemini, Claude, Groq, or OpenRouter.",
+  "theme": "luma",
+  "primaryColor": "#040404",
+  "lightColor": "#7c7c7c",
+  "darkColor": "#c3c3c3",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "api-keys"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/workbook",
+              "concepts/chat-and-agents",
+              "concepts/formulas",
+              "concepts/preview-apply"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/building-financial-models",
+              "guides/charts",
+              "guides/macros",
+              "guides/templates",
+              "guides/chain-mode"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/llm-providers",
+              "configuration/supported-models",
+              "configuration/cell-locking"
+            ]
+          },
+          {
+            "group": "Troubleshooting",
+            "pages": [
+              "troubleshooting/common-errors",
+              "troubleshooting/model-output-issues"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Agent",
+            "pages": [
+              "api/agent-chat",
+              "api/agent-apply",
+              "api/agent-chain"
+            ]
+          },
+          {
+            "group": "Grid & Workbook",
+            "pages": [
+              "api/grid-cell",
+              "api/workbook-sheets",
+              "api/charts"
+            ]
+          },
+          {
+            "group": "System",
+            "pages": [
+              "api/save-load-export",
+              "api/settings-providers"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Natural-language chat to build and edit spreadsheets",
+    "Multi-provider LLM support: Gemini, Claude, Groq, OpenRouter",
+    "Preview/apply flow — review AI writes before committing",
+    "Chain mode — agent auto-applies multi-step plans end-to-end",
+    "Formula synthesis with collision-safe cell placement",
+    "User-defined macros composed from built-in primitives",
+    "Chart overlays (bar, line, pie) rendered via Chart.js",
+    "Preset templates: DCF, Budget, Break-Even, Loan Amortization, Income Statement",
+    "Cell locking to protect read-only ranges from AI edits",
+    "Workbook persistence with .gridos file import/export"
+  ],
+  "publicApiSurface": [
+    "POST /agent/chat",
+    "POST /agent/apply",
+    "POST /agent/chat/chain",
+    "POST /agent/write",
+    "POST /grid/cell",
+    "POST /grid/range",
+    "GET /api/workbook",
+    "POST /workbook/sheet",
+    "POST /workbook/sheet/rename",
+    "POST /workbook/sheet/activate",
+    "POST /workbook/rename",
+    "GET /system/charts",
+    "POST /system/charts",
+    "PATCH /system/charts/{chart_id}",
+    "DELETE /system/charts/{chart_id}",
+    "POST /system/save",
+    "POST /system/load",
+    "GET /system/export",
+    "POST /system/import",
+    "POST /system/clear",
+    "POST /formula/evaluate",
+    "GET /models/available",
+    "GET /settings/providers",
+    "POST /settings/keys/{provider_id}",
+    "DELETE /settings/keys/{provider_id}",
+    "GET /templates",
+    "POST /templates/save",
+    "GET /macros",
+    "POST /macros/save",
+    "DELETE /macros/{name}"
+  ]
+}

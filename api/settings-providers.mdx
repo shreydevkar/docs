@@ -1,0 +1,237 @@
+---
+title: "Manage provider API keys and model availability"
+description: "Configure API keys for Gemini, Anthropic, Groq, and OpenRouter, remove them, and list which models are available given your current configuration."
+---
+
+GridOS routes LLM calls through whichever providers you have configured. The endpoints on this page let you inspect provider status, save or update API keys, remove them, and discover which models are currently usable. Keys are stored locally in `data/api_keys.json` and persist across server restarts.
+
+## GET /settings/providers
+
+Return the list of all known providers and whether each one is currently configured with a working API key.
+
+### Response
+
+<ResponseField name="providers" type="array of objects">
+  One entry per supported provider. Each object contains the fields below.
+</ResponseField>
+
+<ResponseField name="providers[].id" type="string">
+  Machine-readable provider identifier. One of: `"gemini"`, `"anthropic"`, `"groq"`, `"openrouter"`.
+</ResponseField>
+
+<ResponseField name="providers[].display_name" type="string">
+  Human-readable provider name (e.g. `"Google Gemini"`, `"Anthropic Claude"`).
+</ResponseField>
+
+<ResponseField name="providers[].configured" type="boolean">
+  `true` when a valid API key is stored and the provider client initialised successfully.
+</ResponseField>
+
+<ResponseField name="providers[].masked_key" type="string">
+  A masked representation of the stored key (e.g. `"sk-a…b1c2"`), or an empty string when no key is set. The full key is never returned.
+</ResponseField>
+
+### Example
+
+```json
+GET /settings/providers
+```
+
+**Response**
+
+```json
+{
+  "providers": [
+    {
+      "id": "gemini",
+      "display_name": "Google Gemini",
+      "configured": true,
+      "masked_key": "AIza…x9Yb"
+    },
+    {
+      "id": "anthropic",
+      "display_name": "Anthropic Claude",
+      "configured": true,
+      "masked_key": "sk-a…b1c2"
+    },
+    {
+      "id": "groq",
+      "display_name": "Groq",
+      "configured": false,
+      "masked_key": ""
+    },
+    {
+      "id": "openrouter",
+      "display_name": "OpenRouter",
+      "configured": false,
+      "masked_key": ""
+    }
+  ]
+}
+```
+
+---
+
+## POST /settings/keys/save
+
+Save or update the API key for a provider. GridOS immediately attempts to initialise the provider client with the supplied key, so you get instant feedback if the key is syntactically invalid or the provider SDK is unavailable.
+
+### Request
+
+<ParamField body="provider" type="string" required>
+  The provider to configure. Accepted values: `"gemini"`, `"anthropic"`, `"groq"`, `"openrouter"`.
+</ParamField>
+
+<ParamField body="api_key" type="string" required>
+  The API key string. Must be a non-empty string. The key is persisted to `data/api_keys.json` and survives server restarts.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  `"Success"` when the key was saved and the provider client initialised.
+</ResponseField>
+
+<ResponseField name="provider" type="string">
+  The provider ID that was updated.
+</ResponseField>
+
+<ResponseField name="configured" type="boolean">
+  `true` when the provider client is now active and ready to handle requests.
+</ResponseField>
+
+### Errors
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | The `provider` value is not recognised, the `api_key` is empty, or the provider SDK could not be initialised with the supplied key. |
+
+### Example
+
+```json
+POST /settings/keys/save
+{
+  "provider": "anthropic",
+  "api_key": "sk-ant-api03-..."
+}
+```
+
+**Response**
+
+```json
+{
+  "status": "Success",
+  "provider": "anthropic",
+  "configured": true
+}
+```
+
+<Note>
+  If you have a key set via an environment variable (e.g. `ANTHROPIC_API_KEY`), saving a key via this endpoint takes precedence and persists it to disk. Environment-variable keys are used only as a fallback when no disk key is present.
+</Note>
+
+---
+
+## DELETE /settings/keys/{provider_id}
+
+Remove the stored API key for a provider. The provider client is torn down immediately. Subsequent agent calls that require this provider will fail until a new key is saved.
+
+### Path Parameters
+
+<ParamField path="provider_id" type="string" required>
+  The provider whose key you want to remove. Accepted values: `"gemini"`, `"anthropic"`, `"groq"`, `"openrouter"`.
+</ParamField>
+
+### Response
+
+<ResponseField name="status" type="string">
+  `"Success"` when the key was removed (or when no key was present for the provider — the operation is idempotent).
+</ResponseField>
+
+<ResponseField name="provider" type="string">
+  The provider ID that was targeted.
+</ResponseField>
+
+### Errors
+
+| Status | Meaning |
+|--------|---------|
+| `400`  | The `provider_id` is not a recognised provider. |
+
+### Example
+
+```json
+DELETE /settings/keys/groq
+```
+
+**Response**
+
+```json
+{
+  "status": "Success",
+  "provider": "groq"
+}
+```
+
+<Warning>
+  Deleting a provider key does not automatically fall back to an environment variable. To restore environment-variable behaviour for that provider, remove its entry from the in-app settings and restart the server.
+</Warning>
+
+---
+
+## GET /models/available
+
+List every model in the GridOS model catalog, annotated with whether it is currently available (i.e. its provider has a configured key). Also returns the resolved default model ID and the set of configured provider IDs.
+
+### Response
+
+<ResponseField name="models" type="array of objects">
+  Every model in the catalog. Each entry includes at minimum `id`, `provider`, and `available` (`true` / `false`).
+</ResponseField>
+
+<ResponseField name="default_model_id" type="string">
+  The model ID that GridOS will use when no explicit model is requested and multiple providers are configured. `null` when no provider is configured.
+</ResponseField>
+
+<ResponseField name="configured_providers" type="array of strings">
+  Sorted list of provider IDs that currently have a working key.
+</ResponseField>
+
+### Example
+
+```json
+GET /models/available
+```
+
+**Response**
+
+```json
+{
+  "models": [
+    {
+      "id": "gemini-3.1-flash-lite-preview",
+      "provider": "gemini",
+      "display_name": "Gemini Flash Lite",
+      "available": true
+    },
+    {
+      "id": "claude-sonnet-4-6",
+      "provider": "anthropic",
+      "display_name": "Claude Sonnet 4.6",
+      "available": false
+    },
+    {
+      "id": "llama-3.1-8b-instant",
+      "provider": "groq",
+      "display_name": "Llama 3.1 8B (Groq)",
+      "available": false
+    }
+  ],
+  "default_model_id": "gemini-3.1-flash-lite-preview",
+  "configured_providers": ["gemini"]
+}
+```
+
+<Info>
+  Pass a `model_id` from this list in the `model_id` field of `POST /agent/chat` or `POST /agent/chat/chain` to pin a specific model for a conversation. If the model's provider is not configured, GridOS falls back to the default model automatically.
+</Info>
