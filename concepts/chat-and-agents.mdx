@@ -82,7 +82,7 @@ Agents operate under hard constraints enforced by the GridOS kernel — not just
 
 | Constraint | Detail |
 | :--------- | :----- |
-| **No infix operators in cells** | `=A1+B1` is not a valid GridOS formula. Agents must use named primitives like `=MINUS(A1, B1)` or `=SUM(A1, B1)`. Attempting infix syntax in a cell produces a parse error. |
-| **No nested calls in grid cells** | `=SUM(MAX(A1, B1), C1)` is not allowed in a cell. Nesting is only permitted inside macro bodies. |
-| **One contiguous region per turn** | Each agent response targets exactly one rectangular region. Non-contiguous writes are split across chain turns. |
-| **No cross-sheet references** | Cell references inside formulas address the active sheet only. Cross-sheet referencing is on the roadmap but not yet supported. |
+| **Agents use named primitives only** | Agents are instructed to emit `=MINUS(A1, B1)` instead of `=A1-B1`. The parser itself accepts infix (see [Formulas](/concepts/formulas#infix-arithmetic)), but the constraint keeps agent output auditable and macro-composable. |
+| **No nested calls in grid cells** | `=SUM(MAX(A1, B1), C1)` is not allowed in a cell — it's a parser limit, not just a prompt rule. Nesting is permitted inside macro bodies only. |
+| **One contiguous region per intent** | Each entry in a multi-intent response targets exactly one rectangular region. Non-contiguous layouts are split into multiple intents within the same response. |
+| **No cross-sheet references** | Cell references inside formulas address the active sheet only. Cross-sheet referencing is on the roadmap. |

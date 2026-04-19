@@ -1,24 +1,45 @@
 ---
 title: "Configure LLM providers in GridOS settings"
-description: "Connect Google Gemini, Anthropic Claude, Groq, or OpenRouter to GridOS using the in-app settings panel or a .env file. You need at least one key."
+description: "Connect Google Gemini, Anthropic Claude, Groq, or OpenRouter to GridOS. Real free-tier limits, which provider to start with, and how BYOK storage works."
 ---
 
-GridOS is bring-your-own-key: it does not bundle any API credentials. Before the AI agent can edit your workbook, you must connect at least one of the four supported providers. You can add as many providers as you like — the model picker in the chat composer lists every model whose provider has a valid key configured.
+GridOS is **bring-your-own-key** — it does not bundle any API credentials. Before the AI agent can edit your workbook you must connect at least one of the four supported providers. You can add as many as you like; the model picker in the chat composer lists every model whose provider has a valid key.
 
-## Supported providers
+## Which provider should I start with?
+
+Short answer: **Gemini**, unless you're building tiny single-turn edits.
+
+GridOS's agent prompt plus a grid snapshot is typically 3,000–5,000 tokens of input, and multi-intent builds (3-statement, DCF, full operating model) emit 4,000–8,000 tokens of structured JSON output in a single call. Your provider's free-tier **tokens-per-minute (TPM)** budget has to fit that envelope or the request 413s.
+
+| Provider | Free-tier TPM | Fits a multi-intent 3-statement? | Good for |
+| :--- | ---: | :---: | :--- |
+| **Gemini Flash Lite** | ~250,000 | ✅ comfortably | First-time setup, daily use, multi-intent builds |
+| **Anthropic Claude Haiku** | paid only | ✅ (with credits) | Strict JSON reliability on large models |
+| **Groq GPT-OSS 120B** | ~8,000 | ❌ 413s on multi-intent | Single-turn edits, chain mode (one step per call) |
+| **OpenRouter free Llama** | varies per model | ⚠️ sometimes | Fallback when other providers are down |
+
+<Tip>
+  Start with **Gemini Flash Lite** from [Google AI Studio](https://aistudio.google.com/app/apikey). The free tier gives you ~30× the TPM headroom of Groq free, which is the difference between "builds a full financial model in one click" and "413s on every prompt."
+</Tip>
+
+<Warning>
+  **Groq is genuinely free with no credit card, but its free-tier TPM caps are tight.** GPT-OSS 120B has an 8K TPM ceiling — which GridOS's agent prompt alone can push up against. If you want to use Groq on the free tier, either enable chain mode (one rectangle per call) or upgrade to Dev Tier (~$5/month) for comfortable headroom.
+</Warning>
+
+## The four supported providers
 
 <CardGroup cols={2}>
   <Card title="Google Gemini" icon="google">
-    Free tier available at [Google AI Studio](https://aistudio.google.com/app/apikey). Gemini Flash Lite is the recommended daily driver for its speed and generous free quota.
+    Free tier at [Google AI Studio](https://aistudio.google.com/app/apikey) — ~250K TPM on Flash Lite. No credit card required. **Recommended default.**
   </Card>
   <Card title="Anthropic Claude" icon="a">
-    $5 in starter credits at the [Anthropic Console](https://console.anthropic.com/). Strong JSON reliability makes Claude models a good choice for complex financial models.
+    $5 in starter credits at the [Anthropic Console](https://console.anthropic.com/). Best JSON reliability on complex multi-section models; Haiku is cheap and fast.
   </Card>
   <Card title="Groq" icon="bolt">
-    Genuinely free with no credit card required — sign up at [console.groq.com](https://console.groq.com). GPT-OSS 20B runs at ~1000 tokens per second. **Recommended for development.**
+    Free tier at [console.groq.com](https://console.groq.com), no card required. Fastest inference (~1000 tps on some models) but tight TPM on free tier — pair with chain mode or upgrade to Dev Tier.
   </Card>
   <Card title="OpenRouter" icon="share-nodes">
-    Free models with rate limits at [openrouter.ai](https://openrouter.ai). Good fallback option. The `openrouter/free` meta-router picks a working free model automatically.
+    Free models at [openrouter.ai](https://openrouter.ai). Catalog includes Hermes 3 Llama 3.1 405B and Llama 3.3 70B (free). The `openrouter/free` meta-router auto-picks a working free model.
   </Card>
 </CardGroup>
 
@@ -31,14 +52,18 @@ GridOS is bring-your-own-key: it does not bundle any API credentials. Before the
     Click the gear icon in the GridOS menubar to open the Settings panel.
   </Step>
   <Step title="Paste your API key">
-    Find the provider you want to configure, paste your key into the input field, and save.
+    Find the provider you want to configure, paste your key into the input field, and click **Save**.
   </Step>
   <Step title="Confirm the model picker updates">
-    Close Settings. The model picker dropdown in the chat composer now lists models for that provider. You are ready to chat.
+    Close Settings. The model picker dropdown in the chat composer now lists every model from that provider. You're ready to chat.
   </Step>
 </Steps>
 
-Keys saved through the settings panel are stored in `data/api_keys.json`, which is gitignored. They persist across server restarts and are never committed to version control.
+Keys saved through the settings panel are stored in `data/api_keys.json`, which is `.gitignore`-d. They persist across server restarts and never leave your machine.
+
+<Warning>
+  **Paste carefully.** Trailing whitespace, newlines, or picking up a key from a URL fragment are the most common causes of `401 — API key rejected`. If you hit that error and you're sure the key is valid elsewhere, delete the Settings entry and re-paste a freshly copied key.
+</Warning>
 
 ### Option 2: `.env` file
 
@@ -61,12 +86,12 @@ The `.env` file acts as a fallback: GridOS reads it at startup for any provider 
 
 You can configure all four providers simultaneously. GridOS initialises a client for each key and makes them all available at the same time. Use the model picker in the chat composer to choose a specific model — or switch mid-session without restarting the server.
 
-<Tip>
-  Start with Groq for free, fast iteration. Add a Gemini key for its generous free tier when you need higher quality on complex sheets. Anthropic Claude is the best option for strict JSON reliability on large multi-section financial models.
-</Tip>
+A common setup: **Gemini for the agent call** (large TPM budget, reliable JSON) and **Groq 20B as the router** (fastest classifier, so routing adds negligible latency). GridOS picks the router model automatically from whichever fast small model has a key; you don't configure this explicitly.
 
 ## What happens when a key is invalid
 
-If the provider rejects your API key, GridOS returns a `401` error and surfaces the message **"The API key for this model was rejected."** Open Settings (gear icon), update the key for that provider, and try again.
+If the provider rejects your API key, GridOS returns a `401` error and surfaces the message **"The API key for this model was rejected."** Open Settings, update the key for that provider, and retry.
 
 Provider errors are isolated: a bad key for one provider does not block the others. If your Groq key is invalid but your Gemini key is valid, Gemini models continue to work normally.
+
+See the full error reference in [Troubleshooting: common errors](/troubleshooting/common-errors).

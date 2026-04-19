@@ -1,9 +1,9 @@
 ---
-title: "GridOS formulas: built-in functions and syntax"
-description: "Complete reference for GridOS formula syntax: all 21 built-in primitives, range notation, error codes, and the rules for writing formulas in cells."
+title: "GridOS formulas: built-in functions, Excel-ism tolerance, syntax"
+description: "Complete reference for GridOS formula syntax: all 21 built-in primitives, range notation, Excel-ism support, error codes, and the rules for writing formulas in cells."
 ---
 
-GridOS has its own formula engine built into the kernel. Formulas let cells compute values dynamically from other cells, update automatically when dependencies change, and serve as the building blocks for agent-generated financial models and data transformations. This page covers everything you need to write, read, and debug GridOS formulas.
+GridOS has its own formula engine built into the kernel. Formulas let cells compute values dynamically from other cells, update automatically when dependencies change, and serve as the building blocks for agent-generated financial models. This page covers everything you need to write, read, and debug GridOS formulas.
 
 ## Formula syntax basics
 
@@ -15,15 +15,23 @@ A cell becomes a formula cell when its value starts with `=`. Everything after t
 =IF(GT(A2, 0), "Profit", "Loss")
 ```
 
-GridOS formulas call **named functions** with comma-separated arguments in parentheses. That's it — there is no other syntax for computations in cells.
+GridOS formulas are typically written as **named function calls** with comma-separated arguments in parentheses.
 
-<Warning>
-  **No infix operators in cells.** Writing `=A1+B1` or `=C3*0.4` directly in a cell is not supported. Use the equivalent named function instead: `=SUM(A1, B1)` or `=MULTIPLY(C3, 0.4)`. Infix operators inside cell formulas produce a parse error (`#PARSE_ERROR!`).
-</Warning>
+## Infix arithmetic
 
-<Warning>
-  **No nested function calls in cells.** `=SUM(MAX(A1, B1), C1)` is not valid in a grid cell. To compose functions, create a [user macro](/concepts/chat-and-agents#what-agents-can-do) — macro bodies are the one place where nesting is allowed.
-</Warning>
+The engine parser **does accept** the four basic infix operators (`+`, `-`, `*`, `/`) plus exponentiation (`^` or `**`), so a hand-typed formula like:
+
+```
+=(A1 + B1) * 0.4
+```
+
+works when you type it into a cell directly.
+
+<Note>
+  **But agents never emit infix.** The built-in finance and general agents are instructed to use named primitives (`MULTIPLY`, `MINUS`, etc.) for three reasons: auditability (every computation is a named registry call), macro composability (primitives can be wrapped into user macros easily), and cross-provider determinism (LLMs disagree about operator precedence but agree about function names).
+
+  So you'll see `=MULTIPLY(C3, 0.4)` in agent output, not `=C3*0.4` — even though both work. Stick with named primitives in anything the agent will read or modify.
+</Note>
 
 ## Cell references
 
@@ -31,11 +39,23 @@ Reference another cell by its A1 address inside any function argument:
 
 ```
 =MULTIPLY(C3, 0.4)      ← C3 is a cell reference; 0.4 is a literal
-=MINUS(Revenue, Cost)   ← only valid if Revenue/Cost are user macros, NOT cell addresses
 =SUM(B2, B3, B4)        ← three individual cell references
+=DIVIDE(C10, C1)        ← C10 / C1
 ```
 
 When the referenced cell changes value, every formula that depends on it recalculates automatically.
+
+### Excel-ism tolerance
+
+LLMs trained on Excel examples sometimes emit formulas with Excel-specific syntax. The parser normalizes three of the most common patterns before tokenizing, so these work transparently:
+
+| Excel-ism | Normalized to | Example |
+| :--- | :--- | :--- |
+| Absolute refs (`$` prefix) | Plain A1 ref | `$C$5`, `$C5`, `C$5` → `C5` |
+| Percent literals | `(N*0.01)` | `15%` → `(15*0.01)` |
+| Unicode math operators | ASCII equivalents | `A1 × B1` → `A1 * B1` |
+
+GridOS has no fill-down semantics, so the `$` in absolute refs is semantically meaningless here — it's just noise the parser strips. Similarly, the percent normalization means `=MULTIPLY(C5, 15%)` and `=MULTIPLY(C5, 0.15)` compute identically.
 
 ## Range syntax
 
@@ -53,9 +73,17 @@ A range expands to every cell in the bounding rectangle, row by row, left to rig
   Range arguments (`A1:B6`) are only valid as **direct function arguments**, not as sub-expressions. `=SUM(AVERAGE(A1:A5), B1)` is forbidden in cells for the same reason nested calls are — use a macro if you need that composition.
 </Note>
 
+## Nested calls
+
+<Warning>
+  **No nested function calls in cells.** `=SUM(MAX(A1, B1), C1)` is not valid in a grid cell. To compose functions, create a [user macro](/guides/macros) — macro bodies are the one place where nesting is allowed.
+</Warning>
+
+The reason: the preview/apply flow inspects each cell's top-level formula to compute dependencies and run the pre-apply safety guard. Nesting would make that analysis recursive and much harder to audit. Macros opt in to that complexity explicitly.
+
 ## Built-in primitives
 
-These 21 functions are always available. Agents receive the authoritative list at runtime, so they will never invent names outside this table.
+These 21 functions are always available. Agents receive the authoritative list at runtime, so they will never invent names outside this table. [Plugins can add more](/concepts/plugins).
 
 ### Math functions
 
@@ -68,7 +96,7 @@ These 21 functions are always available. Agents receive the authoritative list a
 | `MINUS` | `a, b` | `a − b` | `=MINUS(C3, D3)` |
 | `SUBTRACT` | `a, b` | `a − b` (alias for MINUS) | `=SUBTRACT(Revenue, COGS)` |
 | `MULTIPLY` | `a, b` | `a × b` | `=MULTIPLY(Units, Price)` |
-| `DIVIDE` | `a, b` | `a ÷ b` (returns `#DIV/0!` if b is 0) | `=DIVIDE(Profit, Revenue)` |
+| `DIVIDE` | `a, b` | `a ÷ b` (returns `#DIV/0!` if `b` is 0) | `=DIVIDE(Profit, Revenue)` |
 | `AVERAGE` | `*args` or range | Arithmetic mean | `=AVERAGE(B2:B13)` |
 | `POWER` | `base, exponent` | `base ^ exponent` | `=POWER(1.1, 4)` |
 
@@ -119,9 +147,9 @@ All comparisons return `true` or `false` and are most useful as the first argume
 
 ```
 =MULTIPLY(C3, 0.4)              ← COGS at 40% of revenue in C3
-=MINUS(Revenue, COGS)           ← gross profit (with named macros)
-=DIVIDE(GrossProfit, Revenue)   ← gross margin
-=ROUND(DIVIDE(B5, C5), 4)      ← NOT valid in a cell (nested) — use a macro
+=MULTIPLY(C3, 40%)              ← same result (percent literal normalized)
+=MINUS(C3, C4)                  ← gross profit (revenue − COGS)
+=DIVIDE(C5, C3)                 ← gross margin
 =SUM(D3:D14)                    ← annual total from monthly column
 =POWER(1.1, 4)                  ← 10% growth compounded for 4 periods
 ```
@@ -131,14 +159,13 @@ All comparisons return `true` or `false` and are most useful as the first argume
 
 ```
 =IF(GT(A2, 0), "Positive", "Non-positive")
-=IF(GTE(Score, 90), "A", IF(GTE(Score, 80), "B", "C"))   ← nested IF: NOT valid in cells
 =AND(GT(Revenue, 0), GT(EBITDA, 0))
 =OR(EQ(Status, "Done"), EQ(Status, "Closed"))
 =NOT(EQ(A3, ""))
 ```
 
 <Note>
-  The nested `IF` example above (`IF(…, …, IF(…))`) is **not valid in a cell**. To implement tiered logic in a cell, create a macro that composes the calls, then call the macro from the cell.
+  Tiered logic (`=IF(…, …, IF(…, …, …))`) requires nesting, which isn't valid in cells. Wrap it in a macro — see [Macros](/guides/macros).
 </Note>
 
   </Tab>
@@ -149,7 +176,6 @@ All comparisons return `true` or `false` and are most useful as the first argume
 =AVERAGE(B2:B13)      ← monthly average over a year
 =MAX(C1:C20)          ← peak value
 =MIN(D1:D20)          ← floor value
-=ROUND(AVERAGE(E1:E5), 2)   ← NOT valid in cells; use a macro
 ```
 
   </Tab>
@@ -159,7 +185,7 @@ All comparisons return `true` or `false` and are most useful as the first argume
 
 | Code | Cause | Fix |
 | :--- | :---- | :-- |
-| `#DIV/0!` | `DIVIDE` was called with a zero denominator, or a referenced cell is empty and used as a divisor. | Ensure the denominator cell is populated before applying the formula. The pre-apply guard blocks this automatically during AI writes. |
-| `#NAME?` | You called a function that is not in the registry (e.g. a typo or an Excel-only function like `VLOOKUP`). | Check the built-in primitives table above, or create a user macro for the missing behavior. |
-| `#VALUE!` | A function received the wrong number of arguments, or a non-numeric value where a number was required. | Inspect the cell references to confirm they contain numeric data. |
-| `#PARSE_ERROR!` | The formula string could not be tokenized — typically caused by infix operators (`+`, `-`, `*`, `/`) directly in the cell. | Rewrite using named functions: `=SUM(A1, B1)` instead of `=A1+B1`. |
+| `#DIV/0!` | `DIVIDE` was called with a zero denominator, or a referenced cell is empty and used as a divisor. | Ensure the denominator cell is populated before applying the formula. The pre-apply guard blocks the empty-cell form automatically. |
+| `#NAME?` | The formula called a function that isn't in the registry — typo (`=MULTIPLE` vs `=MULTIPLY`) or an Excel-only name (`=VLOOKUP`). | Check the primitives table above, or define a [macro](/guides/macros) / [plugin](/concepts/plugins) for the missing behavior. |
+| `#VALUE!` | Wrong number of arguments, or a non-numeric value where a number was required. | Inspect the cell references to confirm they contain numeric data. |
+| `#PARSE_ERROR!` | The formula string couldn't be tokenized — usually unsupported syntax like comparison infix (`A1 > 0`) or cross-sheet refs (`Sheet2!A1`). | Rewrite using named functions (`GT(A1, 0)`) or move data to the active sheet. See [Troubleshooting](/troubleshooting/common-errors#cell-shows-parse-error) for the full list. |

@@ -1,51 +1,83 @@
 ---
 title: "Supported AI models and providers in GridOS"
-description: "Browse all 14 AI models available in GridOS across Google Gemini, Anthropic Claude, Groq, and OpenRouter. Learn how to select models and add your own."
+description: "Every AI model available in GridOS with its real free-tier TPM, which are safe for multi-intent builds, and how to add your own."
 ---
 
-GridOS supports 14 models across four providers. Once you configure an API key for a provider, every model from that provider appears in the model picker dropdown in the chat composer. You can switch models between requests without restarting the server.
+GridOS ships with a static catalog of models across four providers. Once you configure an API key for a provider, every model from that provider appears in the model picker dropdown in the chat composer. You can switch models between requests without restarting.
+
+This page is the authoritative catalog — ordered by practical usefulness, not alphabetically.
 
 ## Model catalog
 
-| Model ID | Provider | Notes |
-|:---|:---|:---|
-| `gemini-3.1-flash-lite-preview` | Google Gemini | Fast, generous free tier — good daily driver |
-| `gemini-3.1-pro` | Google Gemini | Higher quality, slower |
-| `claude-haiku-4-5-20251001` | Anthropic | Cheap and fast |
-| `claude-sonnet-4-6` | Anthropic | Balanced quality and speed |
-| `claude-opus-4-7` | Anthropic | Best quality, slowest |
-| `openai/gpt-oss-120b` | Groq | ~500 tps — strongest free model for strict JSON output |
-| `openai/gpt-oss-20b` | Groq | ~1000 tps — fastest Groq option, used for the router call |
-| `qwen/qwen3-32b` | Groq | Preview; strong at structured output |
-| `llama-3.3-70b-versatile` | Groq | Capable; occasionally prefaces JSON with prose |
-| `llama-3.1-8b-instant` | Groq | Tiny and instant; great for classifiers |
-| `nousresearch/hermes-3-llama-3.1-405b:free` | OpenRouter | Free 405B reasoning model |
-| `meta-llama/llama-3.3-70b-instruct:free` | OpenRouter | Free Llama 70B |
-| `meta-llama/llama-3.2-3b-instruct:free` | OpenRouter | Free and tiny |
-| `openrouter/free` | OpenRouter | Meta-router — auto-picks a working free model |
+### Google Gemini (recommended for first-time users)
 
-## Selecting a model
+| Model ID | Free-tier TPM | Notes |
+| :--- | ---: | :--- |
+| `gemini-3.1-flash-lite-preview` | ~250K | **Recommended default.** Fast, cheap, huge TPM headroom. Handles multi-intent 3-statement and DCF builds comfortably. |
+| `gemini-3.1-pro` | ~250K | Higher-quality Gemini; slower and more expensive per token. Use when Flash Lite struggles on complex reasoning. |
 
-Open the chat composer at the bottom of the workbook view. The model picker dropdown is embedded in the composer — click it to see the models available for your configured providers. Select any model and your next chat message uses it. The selection persists for the session.
+### Anthropic Claude
+
+| Model ID | Free tier | Notes |
+| :--- | :---: | :--- |
+| `claude-haiku-4-5-20251001` | $5 credits | Fast and cheap; strong JSON reliability. Best free-credit option if you don't have a Gemini key. |
+| `claude-sonnet-4-6` | $5 credits | Balanced; solid for mid-complexity financial models. |
+| `claude-opus-4-7` | $5 credits | Most capable Claude; best for long-reasoning builds where quality matters more than cost. |
+
+### Groq
+
+Fast inference (~500–1000 tokens/sec) but tight free-tier TPM. See the [free-tier fit](/configuration/llm-providers#which-provider-should-i-start-with) table before picking a Groq model on free tier.
+
+| Model ID | Free-tier TPM | Notes |
+| :--- | ---: | :--- |
+| `openai/gpt-oss-120b` | ~8K | Strongest Groq model for structured JSON. **Tight on free tier for multi-intent builds — pair with chain mode or upgrade Groq plan.** |
+| `openai/gpt-oss-20b` | ~20K | Fastest Groq model (~1000 tps). Also the preferred router model when you have Groq configured. |
+| `qwen/qwen3-32b` | ~12K | Preview; strong at structured output. |
+| `llama-3.3-70b-versatile` | ~12K | Capable but occasionally prefaces JSON with prose — GridOS's balanced-brace parser strips that, but reliability varies. |
+
+### OpenRouter
+
+| Model ID | Free tier | Notes |
+| :--- | :---: | :--- |
+| `nousresearch/hermes-3-llama-3.1-405b:free` | Free | Large 405B model with reasoning chops. Rate-limited. |
+| `meta-llama/llama-3.3-70b-instruct:free` | Free | Strong general-purpose Llama; reliable for GridOS prompts. |
+| `meta-llama/llama-3.2-3b-instruct:free` | Free | Tiny and fast; fine for simple single-cell edits. |
+| `openrouter/free` | Free | Meta-router — auto-picks a working free model at request time. Use when you don't want to think about model choice. |
 
 <Note>
-  The model picker only shows models whose provider has a configured API key. If you expect to see a model but it is missing, check that the corresponding provider key is saved in Settings.
+  `llama-3.1-8b-instant` (Groq) is in the catalog but hidden from the chat composer's model picker — its 6K TPM free-tier ceiling can't fit GridOS's agent prompt. It's used internally as the router classifier, where prompts are small enough to fit.
 </Note>
+
+## Picking a model
+
+Open the chat composer at the bottom of the workbook view. The model picker dropdown is embedded in the composer — click it to see every model available for your configured providers. Select any model and your next chat message uses it. The selection persists across page reloads (stored in `localStorage`).
+
+<Tip>
+  If a model returns garbled or non-JSON output, switch to a stronger one (Claude Sonnet, Gemini Pro) or rephrase to be more specific. If you hit `413 — Request too large`, switch providers or enable chain mode — see [Troubleshooting](/troubleshooting/common-errors#request-too-large-tpm-exceeded-413).
+</Tip>
 
 ## The router model
 
-GridOS uses a separate, faster model for intent classification — deciding which agent (general or finance-specialised) should handle your prompt. This router call is automatically pinned to the fastest small model that has a configured key, in this order of preference:
+GridOS uses a separate, smaller model for **intent classification** — deciding whether your prompt needs the finance agent or the general agent. This routing call is pinned to whichever fast small model has a configured key, in this preference order:
 
-1. `openai/gpt-oss-20b` (Groq, ~1000 tps)
-2. `llama-3.1-8b-instant` (Groq, ~560 tps)
-3. `gemini-3.1-flash-lite-preview` (Google Gemini)
-4. `claude-haiku-4-5-20251001` (Anthropic)
+1. `llama-3.1-8b-instant` (Groq, ~560 tps)
+2. `gemini-3.1-flash-lite-preview` (Google)
+3. `claude-haiku-4-5-20251001` (Anthropic)
+4. `meta-llama/llama-3.2-3b-instruct:free` (OpenRouter)
 
-The router call is transparent to you — it never uses your selected model and does not affect the quality of grid edits. Only the agent call (the one that actually writes cells) uses the model you chose in the picker.
+The router call is transparent: it reserves only 32 completion tokens (enough for one lowercase agent id), so it fits even the tightest free-tier TPM buckets. Your chosen model in the composer drives only the **agent call** — the part that actually writes cells.
 
-## Adding models
+## Adding your own models
 
-Self-hosted users can add models by editing `core/providers/catalog.py`. Append an entry to `MODEL_CATALOG` following this shape:
+Self-hosted users can extend the catalog two ways:
+
+### Via a plugin (recommended)
+
+Create a plugin that calls `kernel.model({...})` — see [Plugins](/concepts/plugins) for the full walkthrough. Plugins don't require editing core files and can ship as a self-contained directory.
+
+### By editing `core/providers/catalog.py`
+
+Append an entry to `MODEL_CATALOG`:
 
 ```python
 {
@@ -80,3 +112,5 @@ The UI picks up new entries on the next page load, as long as the owning provide
     ```
   </Tab>
 </Tabs>
+
+Restricting a model to router use only? Add `"router_only": True` — the picker will hide it but `route_prompt()` will still reach it.

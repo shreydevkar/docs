@@ -46,16 +46,16 @@ GridOS never bundles an API key. You supply one key from any supported provider 
 
 <CardGroup cols={2}>
   <Card title="Google Gemini" icon="google" href="/api-keys">
-    Free tier available at Google AI Studio. Gemini Flash Lite is the default routing model when a Gemini key is configured.
+    Free tier at [Google AI Studio](https://aistudio.google.com/app/apikey). Flash Lite has ~250K TPM free — the most headroom of any free option. **Recommended default.**
   </Card>
   <Card title="Anthropic Claude" icon="robot" href="/api-keys">
-    Haiku, Sonnet, and Opus variants available. Requires an Anthropic Console account with credits.
+    Haiku, Sonnet, and Opus variants. Requires an Anthropic Console account with credits. Best JSON reliability.
   </Card>
   <Card title="Groq" icon="bolt" href="/api-keys">
-    Genuinely free with no credit card required. Runs GPT-OSS and Llama models at up to ~1000 tokens/sec. Recommended for local development.
+    Free with no credit card. Fastest inference (~1000 tps). Free-tier TPM is tight — pair with chain mode, or upgrade to Dev Tier for multi-intent builds.
   </Card>
   <Card title="OpenRouter" icon="shuffle" href="/api-keys">
-    Access to free models including Hermes 3 Llama 405B and Llama 3.3 70B. Good fallback option; occasionally rate-limited.
+    Free access to Hermes 3 Llama 405B and Llama 3.3 70B. Good fallback when other providers throttle.
   </Card>
 </CardGroup>
 
