@@ -1,0 +1,138 @@
+---
+title: "The GridOS plugin system: custom formulas, agents, and models"
+description: "Extend GridOS without forking. Plugins auto-load at boot and can register new primitives, specialist agents, and provider models through three clean seams."
+---
+
+GridOS loads every subdirectory of its `plugins/` folder as a **plugin** — a small Python module that can register custom formulas, specialist agents, and provider models alongside the built-ins. Plugins are the intended way to extend GridOS without touching core, so your extensions survive upgrades and can be shipped as standalone directories.
+
+## Why plugins exist
+
+The kernel draws a hard line between "platform" (the grid engine, the preview/apply flow, the LLM orchestration) and "content" (specific formulas, domain agents, model endpoints). Content changes frequently — new financial primitives, niche industry agents, new Groq models appearing weekly. Platform changes rarely.
+
+Plugins let content live outside the core tree, so:
+
+- A plugin author can ship a real-estate copilot without negotiating a PR into the main repo.
+- Users can mix and match — enable `black_scholes` + `real_estate`, skip the rest.
+- Core upgrades don't risk breaking your customizations, and your customizations don't risk regressing core tests.
+
+## Anatomy of a plugin
+
+```
+plugins/my_plugin/
+  manifest.json     ← name + description; surfaced in the SaaS marketplace
+  plugin.py         ← defines register(kernel)
+```
+
+### `manifest.json`
+
+```json
+{
+  "name": "My Plugin",
+  "description": "One-line pitch shown on the marketplace card.",
+  "category": "finance",
+  "author": "Your Name",
+  "version": "0.1.0"
+}
+```
+
+### `plugin.py`
+
+```python
+def register(kernel):
+    @kernel.formula("BLACK_SCHOLES")
+    def black_scholes(S, K, T, r, sigma, option_type="call"):
+        ...
+
+    kernel.agent({
+        "id": "real_estate",
+        "display_name": "Real Estate Copilot",
+        "router_description": "cap rate, NOI, cash-on-cash, DSCR",
+        "system_prompt": "You are a real-estate underwriting specialist. ..."
+    })
+
+    kernel.model({
+        "id": "my-org/custom-model-v1",
+        "provider": "openrouter",
+        "display_name": "My Custom Model",
+        "description": "OpenRouter-hosted model shipped with this plugin."
+    })
+```
+
+That's it. Start the server; GridOS picks up your plugin on boot.
+
+## The three seams
+
+| Seam | Call | What it does |
+| :--- | :--- | :--- |
+| **Formulas** | `@kernel.formula("NAME")` | Registers a callable into the global formula registry. Available from any cell as `=NAME(...)` alongside `=SUM` / `=AVERAGE` / etc. |
+| **Agents** | `kernel.agent({...})` | Adds a specialist agent the router can pick. Same shape as the built-in `agents/*.json` files. |
+| **Models** | `kernel.model({...})` | Extends the model catalog the UI reads. Entry appears in the picker on next page load, assuming the owning provider has a configured key. |
+
+Each seam targets a different decision the kernel makes at request time — which formula to evaluate, which agent to dispatch to, which provider/model to call — so the three together cover the full LLM → kernel → cell pipeline.
+
+## Example plugins shipped with GridOS
+
+The repo includes three reference plugins to copy as starting points:
+
+<CardGroup cols={3}>
+  <Card title="hello_world" icon="smile">
+    Minimal template: one formula (`=GREET(name)`) and one agent. A 30-line `plugin.py` is all you need to register both.
+  </Card>
+  <Card title="black_scholes" icon="chart-line">
+    `=BLACK_SCHOLES(S, K, T, r, sigma, type)` options pricer. Demonstrates how to ship a single well-defined primitive.
+  </Card>
+  <Card title="real_estate" icon="building">
+    Full specialist agent (Real Estate Copilot) plus domain primitives `=CAP_RATE` and `=DSCR`. Demonstrates a multi-seam plugin.
+  </Card>
+</CardGroup>
+
+## Trust model
+
+Plugins run **in-process** with full Python access — no sandbox, no capability system.
+
+- **Self-hosted / OSS**: you own the process, so you own the trust decision. Plugins in `plugins/` auto-load on boot.
+- **Hosted SaaS** (gridos.onrender.com): plugin auto-loading is gated behind the `GRIDOS_PLUGINS_ENABLED` environment variable; only operator-vetted plugins ship in that directory. The in-app **Marketplace** lets users toggle which vetted plugins apply to their workbook — it's a visibility/discovery layer, not a sandbox.
+
+If you're building a plugin intended for third-party use, treat it like any other Python dependency: review the code before running it.
+
+## Error isolation
+
+A bad plugin can't take down the server. If a plugin's `register()` raises, the loader records the error and continues with the remaining plugins. Check plugin status at runtime:
+
+```bash
+curl http://localhost:8000/plugins
+```
+
+```json
+{
+  "loaded": [
+    {
+      "slug": "hello_world",
+      "name": "Hello World",
+      "formulas": ["GREET"],
+      "agents": ["greeter"]
+    }
+  ],
+  "errors": [
+    {
+      "plugin": "broken_example",
+      "error": "register() failed: NameError: ..."
+    }
+  ]
+}
+```
+
+## Developer map — where to look in core
+
+- **Formula registry**: `core/functions.py` — `@register_tool` decorator and `FormulaEvaluator`. Your plugin's formula becomes a first-class primitive alongside `SUM`, `AVERAGE`, etc.
+- **Agent registry**: `agents/__init__.py` — how built-in agents load. Plugin-registered agents merge into the same `AGENTS` dict at boot.
+- **Model catalog**: `core/providers/catalog.py` — the static list the chat composer reads. See also [Supported models](/configuration/supported-models#adding-your-own-models).
+- **Plugin loader**: `core/plugins.py` — the `PluginKernel` facade and `discover_and_load()` walker.
+
+## Distribution
+
+For now, plugins are distributed as plain directories — paste them into `plugins/` and restart. A published package registry is on the roadmap but not built. In practice the friction is low: real-world plugins are ~50–200 lines of Python and don't need a package manager.
+
+<Tip>
+  If you build a plugin you think is broadly useful (a domain agent for a specific industry, an analytics primitive, a new provider adapter), open an issue on the [GridOS repo](https://github.com/shreydevkar/gridos_kernel) — we can feature it in the SaaS marketplace and link it from these docs.
+</Tip>

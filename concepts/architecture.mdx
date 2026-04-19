@@ -1,0 +1,145 @@
+---
+title: "GridOS architecture: kernel, providers, agents, frontend"
+description: "How the GridOS pieces fit together — the deterministic Python kernel, the provider abstraction, the agent dispatch, and the FastAPI/vanilla-JS frontend."
+---
+
+GridOS is a four-layer system. Each layer has one job, and the interfaces between them are narrow enough that you can swap out any single layer without rewriting the others.
+
+This page is for people who want to understand the design before extending it — plugin authors, contributors, or anyone evaluating GridOS as a platform.
+
+## The four layers
+
+```
+ ┌──────────────────────────────────────────────────────┐
+ │   Frontend  (static/)                                │
+ │   Vanilla JS + HTML grid; chat composer; preview     │
+ │   cards; Apply/Dismiss; settings + marketplace UI    │
+ └──────────────────────────────────────────────────────┘
+                         │ JSON over fetch()
+                         ▼
+ ┌──────────────────────────────────────────────────────┐
+ │   Orchestration  (main.py)                           │
+ │   FastAPI app. Routes HTTP, builds agent prompts,    │
+ │   dispatches to the router + agent, validates,       │
+ │   previews, applies. Telemetry, macros, charts.      │
+ └──────────────────────────────────────────────────────┘
+         │                                   │
+         │ call_model()                       │ kernel.*()
+         ▼                                   ▼
+ ┌─────────────────────────┐    ┌─────────────────────────┐
+ │  Provider abstraction   │    │  Deterministic kernel   │
+ │  (core/providers/)      │    │  (core/)                │
+ │  Gemini · Claude · Groq │    │  Engine, formulas,      │
+ │  · OpenRouter           │    │  collision, locks,      │
+ │                         │    │  macros, A1↔coords      │
+ └─────────────────────────┘    └─────────────────────────┘
+```
+
+## Layer 1 — The deterministic kernel (`core/`)
+
+The kernel is the **source of truth** for every cell. It's pure Python, has zero LLM dependencies, and could run as a headless grid service if you pulled the LLM layer off.
+
+Key modules:
+
+| File | Responsibility |
+| :--- | :--- |
+| `core/engine.py` | Coordinate mapping, write collision resolution, shift logic, lock enforcement, persistence, formula tokenize/evaluate. |
+| `core/functions.py` | Registry of atomic primitives (`SUM`, `MULTIPLY`, `IF`, …) decorated with `@register_tool`. |
+| `core/macros.py` | User-authored macros compiled on top of the primitive registry. |
+| `core/utils.py` | A1 notation ↔ `(row, col)` translation. |
+| `core/models.py` | Pydantic schemas for `AgentIntent` and `WriteResponse`. |
+| `core/workbook_store.py` | Per-user workbook persistence for the SaaS layer. |
+| `core/plugins.py` | `PluginKernel` facade + `discover_and_load()`. |
+
+The kernel is **deterministic**: same inputs, same outputs, every time. That's the property that makes the preview/apply flow trustworthy — the frontend can show you exactly what will change, and the backend will produce that exact result when you click Apply.
+
+## Layer 2 — The provider abstraction (`core/providers/`)
+
+A thin interface that normalizes the four LLM SDKs into a single shape:
+
+```python
+class Provider:
+    def generate(
+        self, *,
+        model: str,
+        system_instruction: str,
+        user_message: str,
+        max_output_tokens: int | None = None,
+    ) -> ProviderResponse: ...
+
+    def is_transient_error(self, exc: BaseException) -> bool: ...
+    def is_auth_error(self, exc: BaseException) -> bool: ...
+```
+
+Every provider (Gemini, Anthropic, Groq, OpenRouter) implements this same interface. `main.py` never touches a provider SDK directly — it calls `call_model(agent_id, ...)` and the provider abstraction handles:
+
+- Translating to the SDK's specific call shape (`messages=[...]` vs `contents=...` vs Claude's system parameter)
+- Classifying errors (auth vs transient vs fatal) so retry logic can be generic
+- Reporting a uniform `ProviderResponse` (text + model + token counts + finish_reason)
+
+The `catalog.py` module lists every known model with its provider, display name, and metadata. The frontend reads this catalog through the `/models/available` endpoint to populate the model picker.
+
+<Tip>
+  Adding a new provider is a ~100-line exercise: subclass `Provider`, implement `generate()`, classify errors for the SDK's exception hierarchy, and register models in `catalog.py`.
+</Tip>
+
+## Layer 3 — Orchestration (`main.py`)
+
+The FastAPI app that ties everything together. It:
+
+1. Accepts a user prompt + current sheet context over HTTP.
+2. Runs a **router classifier** on a small fast model to pick the right agent.
+3. Builds a system prompt from the selected agent's `.json` definition + a live grid snapshot.
+4. Calls the agent model, parses the JSON response, and previews the writes through the kernel.
+5. Returns the preview to the frontend for Apply/Dismiss.
+
+Two model calls happen per user turn:
+
+- **Router call** — tiny, ~500-token prompt, pinned to the fastest small model (typically Groq's `llama-3.1-8b-instant`). Output: one lowercase agent id.
+- **Agent call** — the big one. Uses the user's selected model. Input: full grid context + agent's specialist prompt. Output: structured JSON with `target_cell`, `values`, `plan`, `chart_spec`, `intents`, etc.
+
+Multi-intent responses (introduced in 2026-04-18) let a single agent call return an array of rectangular writes — used for structured deliverables like 3-statement models where ~25 rectangles are emitted atomically in one call instead of walking 25 chain turns.
+
+## Layer 4 — The frontend (`static/`)
+
+Vanilla HTML + JS + CSS — no framework. The full app is in:
+
+- `static/index.html` — the workbook view: grid canvas, chat composer, toolbar.
+- `static/landing.html` — the hero-prompt entry page.
+- `static/app.js` — all the client logic: cell rendering, chat, settings, marketplace, chart rendering via Chart.js.
+
+The frontend speaks JSON to the FastAPI backend and is stateless aside from localStorage (selected model id, recent sheet scroll position). This keeps the system rebootable: you can hard-refresh at any time and the workbook state from the backend re-renders identically.
+
+## The SaaS layer (`cloud/`)
+
+A thin authentication + per-user-kernel-isolation layer that sits on top of the core. It's optional — self-hosted GridOS doesn't touch any `cloud/` code. When enabled, it provides:
+
+- Supabase JWT auth
+- Per-user kernel isolation via a `ContextVar`-bound kernel pool (LRU 64)
+- BYOK — per-user API keys stored server-side in a Supabase table with row-level security
+- Tier enforcement (Free / Plus / Student / Pro / Enterprise) for monthly token + workbook-slot quotas
+- Usage telemetry + analytics
+
+Running locally via `uvicorn main:app --reload` skips all of this — you get a single shared kernel and your API keys live in `data/api_keys.json`.
+
+## Why these layer boundaries
+
+The narrow interfaces between layers make three kinds of work cheap:
+
+1. **Swapping an LLM provider** — only `core/providers/` changes. The kernel, orchestration, and frontend don't know which SDK is underneath.
+2. **Swapping the frontend** — the backend is all JSON over HTTP. You could wire a CLI, a CLI-TUI, a Discord bot, or a React SPA to the same API and every kernel feature would work identically.
+3. **Extending the content layer** — new formulas / agents / models slot in through the [plugin system](/concepts/plugins) without touching core.
+
+The parts that would require a deeper rewrite are shared state (the kernel's dependency graph, collision logic) and the agent prompt contract (system prompts + OUTPUT_FORMAT_SPEC). Those are intentionally centralized — the preview/apply guarantees depend on them being uniform.
+
+## Where to read the code
+
+If you want to understand the codebase start-to-finish, read in this order:
+
+1. `core/models.py` — the data shapes that flow through everything.
+2. `core/engine.py` — where cells actually live and get computed.
+3. `core/providers/base.py` — the LLM contract.
+4. `main.py` → `generate_agent_preview` — the one function that ties it all together.
+5. `static/app.js` → `sendChatMessage` — the frontend counterpart.
+
+Everything else is ornament.

@@ -30,10 +30,12 @@
           {
             "group": "Core Concepts",
             "pages": [
+              "concepts/architecture",
               "concepts/workbook",
               "concepts/chat-and-agents",
               "concepts/formulas",
-              "concepts/preview-apply"
+              "concepts/preview-apply",
+              "concepts/plugins"
             ]
           },
           {
