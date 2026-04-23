@@ -73,6 +73,25 @@ A range expands to every cell in the bounding rectangle, row by row, left to rig
   Range arguments (`A1:B6`) are only valid as **direct function arguments**, not as sub-expressions. `=SUM(AVERAGE(A1:A5), B1)` is forbidden in cells for the same reason nested calls are — use a macro if you need that composition.
 </Note>
 
+## Cross-sheet references
+
+Formulas can reach cells on other sheets in the same workbook with `SheetName!A1` syntax. Sheet names containing spaces or special characters must be single-quoted:
+
+```
+=Data!A1                  ← value of A1 on the Data sheet
+=SUM(Data!A1:A10)         ← sum a range from another sheet
+='Monthly Budget'!B5      ← quoted name for sheets with spaces
+=Sheet1!B2 * 1.1          ← mix cross-sheet reads with arithmetic
+```
+
+Sheet-name matching is case-insensitive. A reference to a sheet that doesn't exist resolves to `#REF!` at evaluation time.
+
+The agent knows the cross-sheet grammar — ask it "pull A1 from Sheet 2 into B2" or "sum the Data sheet's A1:A10 into the summary sheet" and it emits the correct qualified reference. The `ACTIVE SHEET` context in its system prompt tells it where writes land; cross-sheet refs only appear when the user actually asks to read from another sheet.
+
+<Note>
+  **v1 caveat:** the initial read is correct, but upstream changes on the source sheet don't auto-propagate to the dependent cell. Re-evaluate by touching the formula (enter the cell, press Enter) or by re-running the formula through `/grid/cell`. Full cross-sheet dirty-tracking is on the roadmap.
+</Note>
+
 ## Nested calls
 
 <Warning>
@@ -188,4 +207,5 @@ All comparisons return `true` or `false` and are most useful as the first argume
 | `#DIV/0!` | `DIVIDE` was called with a zero denominator, or a referenced cell is empty and used as a divisor. | Ensure the denominator cell is populated before applying the formula. The pre-apply guard blocks the empty-cell form automatically. |
 | `#NAME?` | The formula called a function that isn't in the registry — typo (`=MULTIPLE` vs `=MULTIPLY`) or an Excel-only name (`=VLOOKUP`). | Check the primitives table above, or define a [macro](/guides/macros) / [plugin](/concepts/plugins) for the missing behavior. |
 | `#VALUE!` | Wrong number of arguments, or a non-numeric value where a number was required. | Inspect the cell references to confirm they contain numeric data. |
-| `#PARSE_ERROR!` | The formula string couldn't be tokenized — usually unsupported syntax like comparison infix (`A1 > 0`) or cross-sheet refs (`Sheet2!A1`). | Rewrite using named functions (`GT(A1, 0)`) or move data to the active sheet. See [Troubleshooting](/troubleshooting/common-errors#cell-shows-parse-error) for the full list. |
+| `#PARSE_ERROR!` | The formula string couldn't be tokenized — usually a stray character, unmatched quote, or invalid token. | See [Troubleshooting](/troubleshooting/common-errors#cell-shows-parse-error) for the full list of causes. Cross-sheet refs (`=Sheet2!A1`) and comparison ops (`=A1>B1`) *are* supported now; you'll see `#REF!` rather than a parse error if the referenced sheet doesn't exist. |
+| `#REF!` | A cross-sheet reference pointed at a sheet that doesn't exist or has been deleted. | Check the sheet name and its quoting (`='Monthly Budget'!A1` for names with spaces). Sheet-name match is case-insensitive but the sheet has to actually exist. |
