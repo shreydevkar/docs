@@ -1,0 +1,45 @@
+---
+title: "Realtime collab: live cell sync and presence cursors"
+description: "GridOS broadcasts cell writes and selection changes over Supabase Realtime so collaborators see each other's edits and cursor positions without refreshing."
+---
+
+When two users share a workbook, they see each other's edits and cursor positions live, Google-Sheets-style. This page explains what gets synced, the timing, and how to troubleshoot when it feels off.
+
+## What gets synced
+
+- **Cell writes** — any commit (user typing + Enter, AI agent apply, delete key, Clear unlocked cells) broadcasts a `cells_changed` event. The peer tab paints the affected cells optimistically with a brief yellow flash and then refetches the full grid as a safety net (~50ms later) to pick up formula recalc cascades.
+- **Selection rectangles** — each client broadcasts `cursor_at` with start + end of the current selection. Peers render the other user's rectangle with a faint colored fill + edge border + floating email label anchored at the top-left corner. Single-cell clicks collapse cleanly to a single-cell highlight.
+
+## Timing and reliability
+
+- **Send throttle** — 80ms cooldown with leading + trailing edges, so a fast arrow-key drag collapses into at most one broadcast per 80ms while always landing the final cell.
+- **Heartbeat** — every 4 seconds, each client re-broadcasts its current selection. This recovers automatically from silent WebSocket reconnects (Supabase Realtime auto-resubscribes the channel, but intermediate broadcasts can be lost in the gap).
+- **Stale cursor sweep** — every 1.5 seconds the client removes peer cursors older than 8 seconds. If a collaborator closes their tab, their cursor disappears from your view within 8s.
+- **Mid-edit protection** — if a remote `cells_changed` arrives for a cell you're currently editing, the optimistic paint and refetch both defer until you commit or cancel your in-progress input. Your keystrokes never get clobbered by a peer's write.
+
+## Architecture
+
+- **Transport** — Supabase Realtime broadcast on the channel `workbook:<wb_id>`. One channel per workbook. Both `cells_changed` and `cursor_at` ride the same channel.
+- **Server side** — cell broadcasts fire from the kernel's `add_post_commit_hook` seam. `main.py` registers a closure per kernel that POSTs to `/realtime/v1/api/broadcast` with the service-role key, in a daemon thread so the write request returns without waiting for the broadcast to round-trip.
+- **Client side** — `supabaseClient.channel("workbook:<wb_id>")` with `broadcast: { self: false }` so we don't echo our own writes.
+
+## Why broadcast instead of Presence?
+
+Earlier builds used Supabase's Realtime **Presence** primitive for cursors. It worked in principle but had opaque server-side batching that made cursor updates feel laggy and stuck. Switching to a plain broadcast event on the same channel as cell writes (with client-side TTL for stale cleanup) made it feel instant. Presence is a richer primitive but its throttling semantics didn't match the "every move, right now" cursor UX we wanted.
+
+## Diagnosing issues
+
+Open DevTools Console on both tabs and filter for `[rt]`. You should see:
+
+- `[rt] subscribe status: SUBSCRIBED` once per tab at load.
+- `[rt] subscribed + tracked initial cell: <cell>` right after subscribe.
+- `[rt] cells_changed: N cells by <email>` every time the peer writes.
+
+If you don't see `SUBSCRIBED`, the Supabase Realtime client failed to connect (check the WS column in DevTools Network tab). If you see `SUBSCRIBED` but never `cells_changed` when the peer writes, the server-side broadcast is failing — check Render logs for `[realtime] broadcast to workbook:... failed:` lines.
+
+## Limitations
+
+- **Refresh-to-see-new-sheet** — switching the active sheet doesn't broadcast; peers need to reload. Sheet-level realtime is a future iteration.
+- **No realtime charts** — chart add/remove/resize doesn't broadcast yet; peers see chart changes on next refresh. Same iteration as sheet-level sync.
+- **Chat log is workbook-scoped and refresh-synced** — not realtime.
+- **No conflict UI** — concurrent writes to the same cell from two users use last-writer-wins at the moment the writes arrive on the server. The kernel's `expected_versions` / 409 primitives are in place for a future "someone else edited that cell — reload?" toast.

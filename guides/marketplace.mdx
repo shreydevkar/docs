@@ -1,0 +1,58 @@
+---
+title: "Plugin marketplace: install, search, and configure plugins"
+description: "The in-app Plugin marketplace lets you toggle which plugins are enabled, configure per-user API keys, and filter a growing catalog by name, category, or install status."
+---
+
+The marketplace is GridOS's in-app surface for managing plugins. You get here in SaaS mode via the menubar gear icon → grid icon.
+
+## What it does
+
+- **Install / uninstall** a plugin for your account. Plugin-sourced formulas are **gated** behind the install state — once you've toggled anything, calling an uninstalled plugin's formula returns `#NOT_INSTALLED: enable the 'slug' plugin in File > Marketplace`. Built-in formulas (`SUM`, `MAX`, `IF`, …) are never gated.
+- **Configure** per-user credentials for plugins that need them (Shopify, Stripe, GitHub, any plugin that declares `secrets` in its manifest).
+- **Search** across plugin name, slug, description, author, formula names, and agent ids.
+- **Filter** by category or install status.
+
+## Installing a plugin
+
+Click **Install** on a plugin card. The button toggles to **Remove** once the grant is active. Toggles persist per-user in `public.user_plugins` so your choices follow you across devices.
+
+**First-run is permissive.** Until you toggle anything, you're treated as "no preferences yet" and every loaded plugin's formulas work. The gate activates the moment you make your first toggle and starts honoring your explicit set from then on. This is intentional — it prevents a new user from typing `=GITHUB_STARS(...)` before they've visited the marketplace and getting a wall of `#NOT_INSTALLED` errors.
+
+## Configure — per-user BYOK credentials
+
+Plugins that need third-party API keys (Shopify admin token, Stripe secret key, GitHub PAT) surface a **Configure** button on their marketplace card. Clicking it opens a modal with a password-input field per declared secret slot.
+
+- Values are stored in `public.user_plugin_secrets`, per-user, RLS-protected.
+- **The GET endpoint never returns a secret value** — only which slots are set. So the modal can show a `✓ set` indicator on filled slots without ever re-displaying the value.
+- Paste a new value and save → overwrite. Clear the field on an already-set slot and save → delete.
+- **Disconnect** wipes every secret the plugin has stored for you, in case you rotate keys or leave the service.
+
+In shared workbooks, collaborators run formulas against **the owner's** credentials — consistent with "owner controls the workspace." If you invite someone to a Stripe-backed dashboard, your Stripe key is what powers the numbers they see, not theirs.
+
+## Search and filter
+
+The controls row above the plugin grid gives you:
+
+- **Search box** — live filters the plugin grid by substring match across name, slug, description, author, formula names, and agent ids. Type `mrr` → finds Stripe via the `STRIPE_MRR` formula name.
+- **Category dropdown** — auto-populated from the distinct categories in the current plugin set. Categories come from each manifest's `category` field.
+- **Status dropdown** — Installed / Available / Any.
+- **Count pill** — "3 of 7 plugins" in the top-right so you can see the filter's effect at a glance.
+
+Clicking "Clear filters" restores the full view if a combination returns zero matches.
+
+## OSS mode
+
+Everything in OSS mode is unchanged from pre-marketplace behavior:
+
+- Every plugin that loaded at boot is effectively "installed" — no per-user state exists.
+- The Configure button doesn't appear — plugins fall back to env vars (`SHOPIFY_ADMIN_TOKEN`, `STRIPE_SECRET_KEY`, `GITHUB_TOKEN`).
+- The toggle UI still works but is a no-op. It's a discovery surface for the catalog, not a gate.
+
+## Plugin logos
+
+Shopify, Stripe, and GitHub have their official logos rendered inline from SVG (no external image fetches). Every other plugin gets a colored monogram fallback keyed off its slug — stable across reloads, so a plugin's tile always looks the same.
+
+## Related
+
+- [The GridOS plugin system](/concepts/plugins) — how plugins are authored and discovered at boot.
+- [Connectors (Shopify / Stripe / GitHub)](/guides/connectors) — the three shipped BYOK connectors and what each one does.

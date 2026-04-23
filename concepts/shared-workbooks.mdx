@@ -1,0 +1,50 @@
+---
+title: "Shared workbooks: invite collaborators to edit the same sheet"
+description: "GridOS workbooks are single-owner by default; SaaS mode lets the owner invite other accounts as collaborators who edit alongside them with live cell sync and presence cursors."
+---
+
+In SaaS mode every workbook has exactly one **owner** — the user who created it. The owner can invite other GridOS users as **collaborators** who share the live workbook state and edit alongside them.
+
+This page covers the v1 collaboration model shipped with the `0007_workbook_collaborators.sql` migration. Realtime cell sync and presence cursors are covered in [Realtime collab](/concepts/realtime).
+
+## How sharing works
+
+- **One live kernel per workbook.** When User B (a collaborator) opens a workbook owned by User A, the server resolves their request to User A's kernel pool entry — both users edit the same in-memory state. All writes go through the same thread-safe commit path, so there's no state drift between tabs.
+- **Owner controls the workspace.** The owner picks which plugins are enabled, sets the connector credentials (Shopify / Stripe / GitHub), and decides when to rename or delete the workbook. Collaborators inherit those choices while they're working inside the owner's workbook.
+- **Writes are authoritative.** Every collaborator's cell edit goes through the same preview → apply or direct-write paths as the owner's. The kernel's per-cell version counter + write lock prevent two concurrent writes from corrupting state.
+
+## Inviting a collaborator
+
+1. **File → Share…** opens the share modal for the currently-open workbook.
+2. Type the collaborator's email and click **Invite**.
+3. If the invitee already has a GridOS account, the workbook shows up in their **Shared with me** strip on the landing page immediately.
+4. If they don't have an account yet, the invite sits as a **pending invite** until they sign up. Once they do, a Postgres trigger promotes the pending row into a full collaborator grant atomically — so the shared workbook is already in their **Shared with me** list on first visit. Send them the share link so they know where to sign up.
+
+The share modal lists every collaborator (active and pending), shows their role, and has a ✕ revoke button next to each.
+
+## Roles (v1)
+
+v1 ships **editor-only**. Every invitee gets full write access to the shared workbook. Viewer / read-only access is on the roadmap — the schema column and backend checks are in place, but the write-endpoint enforcement hasn't landed yet. The Share modal rejects `role: 'viewer'` for now so the semantics stay honest.
+
+## What collaborators can and can't do
+
+| Action | Owner | Editor collaborator |
+| :--- | :--- | :--- |
+| Read all cells, charts, chat history | ✅ | ✅ |
+| Write cells / delete cells / run the AI agent | ✅ | ✅ |
+| Rename the workbook | ✅ | ❌ (403 from `/workbooks/{id}` PATCH) |
+| Delete the workbook | ✅ | ❌ (403 from `/workbooks/{id}` DELETE) |
+| Manage collaborators (invite / revoke) | ✅ | ❌ |
+| Install or configure plugins | ✅ | ❌ (sees the owner's enabled set) |
+| Use connector formulas (Shopify / Stripe / GitHub) | ✅ (with the owner's keys) | ✅ (with the owner's keys) |
+
+## Technical notes
+
+- **Kernel pool key** — `(owner_id, workbook_id)`. Collaborators resolve to the owner's key via `workbook_store.resolve_workbook_access()` in `current_kernel_dep`.
+- **Scope ContextVar** — `_current_scope` holds the ACL-resolved scope so save/load/rename/delete paths don't silently fall back to the caller's id. This was the source of a nasty ownership-transfer bug in an earlier build — collaborators' autosaves were rewriting `public.workbooks.user_id` to themselves.
+- **Concurrency** — the kernel's write lock + per-cell version counter are the defense against interleaved writes. `/grid/cell` and `/grid/range` accept an optional `expected_versions` body for optimistic locking (409 Conflict on drift); see the [Grid cell writes](/api/grid-cell) API reference.
+- **Schema** — `public.workbook_collaborators(workbook_id, user_id, role, invited_by, invited_at, accepted_at)` + `public.pending_invites(workbook_id, email, role, invited_by, invited_at, accepted_at)`. Both RLS-protected. The `promote_pending_invites` trigger on `public.users` atomically converts pending rows to collaborator rows when the invitee signs up.
+
+## OSS mode
+
+Sharing is SaaS-only — OSS is a single-user, single-process install by design. The `/workbook/{id}/collaborators` endpoint returns 404 in OSS mode; the File → Share… menu entry is hidden via the `menu-saas-only` class.

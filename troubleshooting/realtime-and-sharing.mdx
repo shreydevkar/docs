@@ -1,0 +1,52 @@
+---
+title: "Realtime sync and shared workbooks"
+description: "Diagnosing stuck cursors, missed cell updates, failed invites, and the 'Could not load marketplace' cold-start error."
+---
+
+Symptoms and fixes for the shared-workbook and realtime-collab stack.
+
+## Cell writes don't show up on the peer tab
+
+**Check the Console.** Open DevTools → Console on the tab that's not seeing updates and filter for `[rt]`.
+
+- If you see `[rt] subscribe status: SUBSCRIBED` but never `[rt] cells_changed: ...` when the peer writes, the server is not broadcasting. Check Render logs for `[realtime] broadcast to workbook:... failed:` lines — usually a transient Supabase Realtime API issue.
+- If you don't see `SUBSCRIBED` at all, the Realtime WebSocket failed to connect. Check Network → WS in DevTools.
+
+**Delete-key clears also broadcast.** If an *earlier* version didn't sync deletes, make sure the server is on a build that includes `clear_cells` firing the post-commit hook. This shipped alongside the realtime feature.
+
+## Peer cursor is stuck on a previous cell
+
+Two possible causes:
+
+1. **Presence updates were being dropped** on older builds that used the Presence primitive. The current build uses broadcast instead — each cursor move fires a `cursor_at` event with 80ms leading + trailing throttle. Hard-refresh both tabs; if logs show `[rt] track cell=<cell>` firing on the moving side but the peer's `[rt] cursor_at` handler only shows stale positions, the channel is stuck — reload.
+
+2. **The selection doesn't broadcast on `selectedRange.end` changes.** This was fixed in the April 22 realtime rollout. If you're on a pre-fix build, the cursor latches onto the drag anchor and doesn't move.
+
+## "Connection breaks" when both users type in the same cell
+
+Fixed. The old failure mode: User B's editing `<input>` was getting destroyed by a remote-cells-changed refresh, Enter dispatched to a detached DOM tree, `editingCell` stayed stuck, and all future broadcasts for that cell were silently skipped.
+
+Current behavior: `updateCellDom` bails when the cell matches `editingCell`, and `handleRemoteCellsChanged` skips gridData updates for cells being edited. Typing survives a flurry of peer writes; Enter commits cleanly.
+
+If you still see this, hard-refresh to pick up the current build.
+
+## Invites to unregistered users seem to fail silently
+
+The invite DOES land in `public.pending_invites`. On the invitee's sign-up, the `promote_pending_invites` trigger on `public.users` atomically converts it to a full collaborator row. The shared workbook then appears in their "Shared with me" strip on first visit.
+
+**If the invitee signs up but doesn't see the workbook**, check that migration `0008_pending_invites.sql` (and `0009_fix_pending_invites_unique.sql`) are applied on your Supabase project. Without them the trigger doesn't exist and pending invites never promote.
+
+## "Could not load marketplace: Failed to fetch"
+
+Almost always Render free tier's cold-start timeout. The service spins down after ~15 min idle; the first fetch after wake can exceed the browser's default fetch timeout.
+
+Fix: give it 30 seconds and refresh. If you run your own Render deploy, the free `UptimeRobot` monitor keep-alive pinging `/healthz` every 5 minutes prevents this in practice.
+
+## Workbook ownership silently transferred
+
+Shouldn't happen on current builds. The historical cause: when a collaborator saved (autosave or explicit) the server recomputed scope without the resolved `owner_id` and the upsert rewrote `public.workbooks.user_id` to the caller. Two fixes shipped:
+
+1. `current_kernel_dep` stashes the ACL-resolved scope in a ContextVar (`_current_scope`).
+2. Every save/load/rename/delete path reads from that ContextVar via `_scope_from_context()` instead of recomputing.
+
+If your DB has a pre-fix corruption (a workbook where `user_id` in `public.workbooks` matches a `user_id` in `public.workbook_collaborators` for the same row), the cross-reference is the smoking gun. Fix is a one-row UPDATE setting `user_id` back to whoever originally shared it (use the `invited_by` column on the collaborator row to identify the real owner).

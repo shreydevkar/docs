@@ -1,0 +1,93 @@
+---
+title: "Developer plugins — upload, test, delete"
+description: "Hot-upload, test, and delete GridOS plugins without a repo push or server restart. OSS-only, gated behind an explicit env flag because it's a full RCE surface."
+---
+
+The endpoints behind the [developer plugin portal](/configuration/developer-plugin-portal). All three are refused in SaaS mode and require `GRIDOS_DEV_PORTAL_ENABLED=1` on the server.
+
+## POST /dev/plugins/upload
+
+Write `plugin.py` + `manifest.json` into `plugins/<slug>/` and hot-register the plugin's formulas/agents/models into the running kernel.
+
+### Request
+
+<ParamField body="slug" type="string" required>
+  Match `^[a-z][a-z0-9_]{1,39}$` — lowercase letters, digits, underscores; starts with a letter. No path separators, no uppercase. Prevents directory traversal and conflicts with Python module naming.
+</ParamField>
+
+<ParamField body="manifest" type="object">
+  The `manifest.json` body. Fields default to sensible values — the slug, a generic description, category `"custom"`, etc. — if omitted.
+</ParamField>
+
+<ParamField body="plugin_py" type="string" required>
+  The full source of `plugin.py`. Must define a top-level `register(kernel)` function. Syntax-checked via `compile()` before the module is imported, so a typo returns a clean 400 rather than a partial install.
+</ParamField>
+
+### Response
+
+```json
+{
+  "ok": true,
+  "record": {
+    "slug": "my_plugin",
+    "name": "My Plugin",
+    "description": "...",
+    "category": "custom",
+    "author": "local",
+    "version": "0.1.0",
+    "formulas": ["MY_ADD"],
+    "agents": [],
+    "models": []
+  }
+}
+```
+
+On failure, returns 400 with `{ok: false, error: {plugin, error}}` where `error` is the exception message.
+
+## DELETE /dev/plugins/\{slug\}
+
+Unregister every formula + agent the plugin added, evict its cached `sys.modules` entry so a reload actually re-runs `register()`, and remove the directory from disk.
+
+### Response
+
+```json
+{ "ok": true, "slug": "my_plugin" }
+```
+
+Returns 404 if the slug doesn't match a loaded plugin.
+
+## POST /dev/plugins/test
+
+Evaluate a single formula expression in an ephemeral `GridOSKernel()` so the live workbook state stays clean.
+
+### Request
+
+<ParamField body="formula" type="string" required>
+  A formula expression. The leading `=` is optional — the endpoint adds it if missing.
+</ParamField>
+
+### Response
+
+```json
+{ "ok": true, "value": 42 }
+```
+
+or on error:
+
+```json
+{ "ok": false, "error": "FormulaParseError: ..." }
+```
+
+Useful for iterating on a plugin without polluting your active sheet: upload → test → tweak → re-upload.
+
+## Security notes
+
+- **Full RCE surface.** Uploaded `plugin.py` is imported into the running server process with no sandbox. Only use in local OSS.
+- **Refused in SaaS unconditionally.** No env flag can unlock this in SaaS mode — the marketplace is the sanctioned distribution path there.
+- **Slug regex** blocks path-traversal attempts (`../`, etc.) and enforces Python-module-compatible names.
+- **Syntax check before exec.** The `compile()` precheck surfaces Python errors before `exec_module` runs, so a bad plugin can't partially mutate server state.
+
+## Related
+
+- [Developer plugin portal](/configuration/developer-plugin-portal) — the UI on top of these endpoints.
+- [Self-evolving formulas](/guides/self-evolving-formulas) — how the agent uses this same upload endpoint to install plugins it proposes.

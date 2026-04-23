@@ -23,6 +23,10 @@ Write a single cell value in A1 notation. The value can be a plain string, a num
   Name of the sheet to target. Defaults to the currently active sheet when omitted.
 </ParamField>
 
+<ParamField body="expected_versions" type="object">
+  Optional `{A1: int}` map for optimistic-concurrency locking. Every cell carries a `version` counter that bumps on each commit. If the caller supplies an expected version that doesn't match the stored version, the endpoint returns `409 Conflict` with `{cell, expected, actual}` instead of overwriting. Useful in shared workbooks when you want to detect that someone else edited the cell since you loaded it.
+</ParamField>
+
 ### Response
 
 <ResponseField name="status" type="string">
@@ -42,6 +46,7 @@ Write a single cell value in A1 notation. The value can be a plain string, a num
 | Status | Meaning |
 |--------|---------|
 | `400`  | The target cell is locked. Unlock it before writing. |
+| `409`  | `expected_versions` was supplied and one of the cells has drifted. Response body is `{message, cell, expected, actual}`. Refetch and retry. |
 
 ### Example
 

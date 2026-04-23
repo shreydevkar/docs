@@ -1,0 +1,84 @@
+---
+title: "Connectors: Shopify, Stripe, GitHub"
+description: "Three shipped BYOK connector plugins turn spreadsheet cells into live dashboards against Shopify, Stripe, and GitHub. Auth per-user via the marketplace Configure modal, or via env vars in OSS mode."
+---
+
+GridOS ships three third-party connectors in-tree. Each is a plugin — loaded at boot, callable as a formula from any cell, configurable per-user through the marketplace Configure modal (or via env vars in OSS).
+
+All three follow the same pattern: stdlib `urllib` (no new Python deps), a 60-second in-process cache so spreadsheet-wide recalcs don't hammer the upstream API, and `#<PLUGIN>_*!` sentinel strings on failure so errors surface in-cell rather than crashing the recalc.
+
+## Shopify
+
+**Formulas:**
+
+```
+=SHOPIFY_REVENUE(30)            Gross revenue over the last 30 days
+=SHOPIFY_ORDER_COUNT(30)        Number of orders in the window
+=SHOPIFY_AVG_ORDER_VALUE(30)    Revenue ÷ orders (0 when no orders)
+=SHOPIFY_PRODUCT_COUNT()        Total published products
+```
+
+**Credentials:**
+
+- `STORE_DOMAIN` — your Shopify admin domain, e.g. `myshop.myshopify.com`. No scheme, no trailing slash.
+- `ADMIN_TOKEN` — a private-app Admin API access token (`shpat_…`). Needs at minimum the `read_orders` and `read_products` scopes.
+
+Set them in the marketplace **Configure** modal (SaaS) or as `SHOPIFY_STORE_DOMAIN` / `SHOPIFY_ADMIN_TOKEN` env vars (OSS).
+
+## Stripe
+
+**Formulas:**
+
+```
+=STRIPE_REVENUE(30)             Net successful charges in the window (minus refunds)
+=STRIPE_CHARGE_COUNT(30)        Count of successful charges
+=STRIPE_MRR()                   Monthly-normalized sub revenue from active subscriptions
+=STRIPE_ACTIVE_SUBSCRIBERS()    Distinct customers on active subs
+=STRIPE_CUSTOMER_COUNT()        Total customers
+```
+
+**MRR normalization**: the plugin walks every active subscription item and normalizes its recurring interval into months (day → 1/30, week → 7/30, month → 1, year → 12), so a mix of monthly, annual, and weekly plans sums to a meaningful monthly number. Amounts are converted from Stripe's cents to dollars in the return value.
+
+**Credentials:**
+
+- `SECRET_KEY` — `sk_live_…` or `sk_test_…` from Stripe Dashboard → Developers → API keys. For safety, use a **restricted key** with read-only access to Charges, Customers, and Subscriptions rather than your primary secret key.
+
+## GitHub
+
+**Formulas:**
+
+```
+=GITHUB_STARS("user/repo")                       Star count
+=GITHUB_FORKS("user/repo")                       Fork count
+=GITHUB_OPEN_ISSUES("user/repo")                 Open issues + PRs combined
+=GITHUB_COMMITS_LAST_N_DAYS("user/repo", 30)     Commits in the window
+```
+
+The repo argument accepts `"user/repo"` or a pasted GitHub URL like `"https://github.com/user/repo"`.
+
+**Credentials (optional):**
+
+- `TOKEN` — optional personal access token. Without one you get GitHub's anonymous 60 req/hr limit on public repos; with one you get 5000 req/hr and can read private repos you have access to.
+
+## Error sentinels
+
+All three connectors return sentinel strings on failure so the error is visible in-cell:
+
+| Sentinel | Meaning |
+| :--- | :--- |
+| `#SHOPIFY_AUTH!` / `#STRIPE_AUTH!` / `#GITHUB_AUTH!` | Missing credentials, or upstream returned 401/403 |
+| `#SHOPIFY_OFFLINE!` / `#STRIPE_OFFLINE!` / `#GITHUB_OFFLINE!` | Network unreachable |
+| `#SHOPIFY_<code>!` | Any non-auth HTTP error surfaced with the upstream status code |
+| `#GITHUB_RATE_LIMIT!` | 60 req/hr anon limit exceeded — set a `GITHUB_TOKEN` |
+| `#GITHUB_NOT_FOUND!` / `#GITHUB_BAD_REPO!` | Repo doesn't exist or the repo string didn't parse |
+| `#NOT_INSTALLED: enable the 'slug' plugin in File > Marketplace` | You've toggled something in the marketplace and this plugin isn't enabled for your account |
+
+## Caveats
+
+- **Operator-scoped env vars in SaaS** — if you set `SHOPIFY_ADMIN_TOKEN` on the Render service in SaaS mode, every user queries *your* Shopify store. That's the OSS fallback behavior bleeding through. For a multi-tenant deploy, don't set plugin credentials in the server env; let each user configure their own via the marketplace Configure modal.
+- **Per-user quotas live upstream** — the 60 req/hr GitHub anon limit, Stripe's 100 req/sec cap, and Shopify's leaky-bucket rate limit are all on the upstream. The 60s cache helps a ton but a workbook that uses the same formula in 100 cells will still issue one upstream request per formula per 60s window.
+
+## Related
+
+- [The GridOS plugin system](/concepts/plugins) — how to write your own connector.
+- [Plugin marketplace](/guides/marketplace) — how to install + configure them.

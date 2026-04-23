@@ -35,7 +35,9 @@
               "concepts/chat-and-agents",
               "concepts/formulas",
               "concepts/preview-apply",
-              "concepts/plugins"
+              "concepts/plugins",
+              "concepts/shared-workbooks",
+              "concepts/realtime"
             ]
           },
           {
@@ -45,7 +47,10 @@
               "guides/charts",
               "guides/macros",
               "guides/templates",
-              "guides/chain-mode"
+              "guides/chain-mode",
+              "guides/marketplace",
+              "guides/connectors",
+              "guides/self-evolving-formulas"
             ]
           },
           {
@@ -53,14 +58,17 @@
             "pages": [
               "configuration/llm-providers",
               "configuration/supported-models",
-              "configuration/cell-locking"
+              "configuration/cell-locking",
+              "configuration/developer-plugin-portal"
             ]
           },
           {
             "group": "Troubleshooting",
             "pages": [
               "troubleshooting/common-errors",
-              "troubleshooting/model-output-issues"
+              "troubleshooting/model-output-issues",
+              "troubleshooting/realtime-and-sharing",
+              "troubleshooting/plugin-issues"
             ]
           }
         ]
@@ -81,7 +89,15 @@
             "pages": [
               "api/grid-cell",
               "api/workbook-sheets",
-              "api/charts"
+              "api/charts",
+              "api/workbook-collaborators"
+            ]
+          },
+          {
+            "group": "Plugins",
+            "pages": [
+              "api/plugin-secrets",
+              "api/dev-plugins"
             ]
           },
           {

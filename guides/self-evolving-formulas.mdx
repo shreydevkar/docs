@@ -1,0 +1,75 @@
+---
+title: "Self-evolving formulas: let the agent build new plugins on demand"
+description: "When a user asks for a formula that doesn't yet exist, the AI agent can emit a full plugin spec — slug, Python source, and example usage — and you install it with one click. The formula becomes a first-class primitive immediately."
+---
+
+The kernel ships with hundreds of built-in primitives, but real spreadsheets always need one more. Rather than forcing you to drop to Python, GridOS lets the agent propose a new plugin when a user asks for a formula that isn't expressible as a composition of existing primitives.
+
+This is what we call the **self-evolving formula loop** — agent → `plugin_spec` → preview → install → first-class formula.
+
+## What it looks like
+
+Suppose you ask GridOS:
+
+> "Write me a formula `=CELSIUS_TO_F(c)` that converts celsius to fahrenheit."
+
+A macro (`cloud/macros.py`-based user macro) would work here because the math composes over built-ins. But for a formula like:
+
+> "Build me `=GET_WEATHER(city)` that fetches live weather for a city."
+
+no macro composition covers it. The agent detects this, emits a `plugin_spec` field in its response, and GridOS renders it in the preview card as a full proposed Python plugin. You see the code, you see the example usage, and you click **Install plugin** if you want it.
+
+## The `plugin_spec` shape
+
+The finance and general system prompts describe a writable field the agent can fill when it needs a new primitive. Shape:
+
+```json
+{
+  "plugin_spec": {
+    "slug": "weather",
+    "name": "Weather",
+    "description": "Live weather by city via the open-meteo API.",
+    "example_formula": "=GET_WEATHER(\"New York\")",
+    "plugin_py": "def register(kernel):\n    @kernel.formula(\"GET_WEATHER\")\n    def get_weather(city):\n        ...\n"
+  }
+}
+```
+
+Rules the agent must follow:
+
+- `slug` matches `^[a-z][a-z0-9_]{1,39}$` (same as the dev portal).
+- `plugin_py` defines a top-level `register(kernel)`.
+- Self-contained code — stdlib only, or third-party libraries the server already has.
+- On network / auth failure, formulas should return a `#PLUGIN_*!` sentinel string instead of raising.
+- No calls to the new formula in the same response — the formula isn't registered yet; `values` should be `null`.
+
+## Validation before preview
+
+Before the preview card even renders, `_validate_proposed_plugin` in `main.py` does:
+
+- Slug regex check.
+- Presence check for `def register(kernel)`.
+- `compile()` syntax check so you don't burn a preview turn on broken Python.
+
+If validation fails, the preview card shows `Plugin proposal ignored: <reason>` and the user can ask again.
+
+## Install flow
+
+The preview card renders the proposed plugin's source in a syntax-highlighted `<pre>` block with a blue **Install plugin** button below it. Clicking it:
+
+1. `POST /dev/plugins/upload` with `{slug, manifest, plugin_py}`.
+2. Files are written to `plugins/<slug>/` and the plugin is hot-registered into the live kernel.
+3. The button disables itself after install so a double-click can't re-upload.
+4. The agent's suggestion is saved in chat history so you can come back to it later.
+
+The plugin is now persistent — it survives server restarts (it's real files on disk), and it shows up in the marketplace alongside the stock plugins.
+
+## When NOT to use it
+
+- **SaaS mode.** The `/dev/plugins/upload` endpoint is refused in SaaS (the marketplace is the sanctioned path there), so the Install button will 403 unless you're on a local OSS server with `GRIDOS_DEV_PORTAL_ENABLED=1`.
+- **Untrusted sessions.** The proposed code is arbitrary Python that will run in your server process. The preview card shows the source precisely because you should read it before installing — treat this exactly like pasting code from a stranger.
+
+## Related
+
+- [Developer plugin portal](/configuration/developer-plugin-portal) — the manual variant of the same upload/test/delete flow.
+- [The GridOS plugin system](/concepts/plugins) — the contract a plugin must satisfy.

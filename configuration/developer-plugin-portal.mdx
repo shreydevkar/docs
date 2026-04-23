@@ -1,0 +1,59 @@
+---
+title: "Developer plugin portal: upload and test plugins from the UI"
+description: "An in-UI access point for building GridOS plugins without pushing to the repo. Upload a plugin.py, test its formulas in isolation, delete when you're done. OSS-only and gated behind an explicit env flag because it's a full remote-code-execution surface."
+---
+
+The developer plugin portal lets you upload, test, and delete GridOS plugins directly from the UI — no repo push, no server restart. Useful for rapid iteration on a plugin you're building.
+
+**This is a full remote-code-execution surface.** Uploaded `plugin.py` is imported and run in the server process with no sandbox. It's refused unconditionally in SaaS mode, and in OSS mode it's only available when you explicitly opt in via an env flag.
+
+## Enabling
+
+Add to your `.env`:
+
+```
+GRIDOS_DEV_PORTAL_ENABLED=1
+```
+
+Then restart uvicorn. The menu entry appears at **View → Developer plugin portal…**.
+
+Attempting to use the portal without the flag returns 403 with a clear error message. Attempting to use it in SaaS mode (regardless of the flag) also returns 403 — the marketplace is the sanctioned distribution path there.
+
+## What the portal does
+
+The modal has three sections:
+
+**Loaded plugins list** — every plugin discovered at boot, plus any you upload this session. Each row has a ✕ button that deletes the plugin's directory and unregisters its formulas + agents from the live kernel.
+
+**Upload form** — slug (must match `^[a-z][a-z0-9_]{1,39}$`, no path separators), description, and the full `plugin.py` source. Clicking **Upload & reload** writes the files into `plugins/<slug>/` and hot-registers everything into the running kernel — new formulas are immediately callable from any cell.
+
+**Formula tester** — type a formula expression (e.g. `MY_ADD(2, 3)`), click **Run**, and the portal evaluates it in an ephemeral kernel so the result comes back without touching your active workbook. Good for iterating on a formula's shape without polluting your real sheet.
+
+## Endpoints
+
+The three backend endpoints the portal talks to:
+
+```http
+POST   /dev/plugins/upload           { slug, manifest, plugin_py } → hot-register
+DELETE /dev/plugins/{slug}           → unregister + remove directory
+POST   /dev/plugins/test             { formula } → run in an ephemeral kernel
+```
+
+All three are behind the `GRIDOS_DEV_PORTAL_ENABLED` + non-SaaS guard. Refused otherwise.
+
+## Security notes
+
+- **Slug regex** — `^[a-z][a-z0-9_]{1,39}$`. No path separators, no uppercase, no dashes. Prevents directory traversal and conflicts with Python module naming.
+- **Syntax-check on upload** — `compile(plugin_py, ...)` runs before the file is imported, so you get a clean error message on syntax bugs rather than a partial install.
+- **Hot-reload safety** — uploading a slug that already exists evicts the old module from `sys.modules` so the next `exec_module` actually re-imports the source. Without this, Python's import cache would silently serve the old code.
+- **Ephemeral-kernel tester** — the `/dev/plugins/test` endpoint spins up a fresh `GridOSKernel()` per call so a buggy formula can't corrupt your active workbook's state.
+
+## When NOT to use
+
+- **Production / hosted / shared deploys.** The portal is for local iteration during plugin development. Ship finished plugins by committing their directory to `plugins/` and pushing.
+- **Untrusted plugin sources.** The portal runs arbitrary Python in your server process — never paste in code you haven't read.
+
+## Related
+
+- [The GridOS plugin system](/concepts/plugins) — the underlying architecture and the `register(kernel)` contract.
+- [Self-evolving formulas](/guides/self-evolving-formulas) — how the agent proposes a plugin via `plugin_spec` and installs it via this same upload endpoint.

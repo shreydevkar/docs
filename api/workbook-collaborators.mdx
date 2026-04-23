@@ -1,0 +1,123 @@
+---
+title: "Workbook collaborators — invite, list, revoke"
+description: "Manage who has access to a shared workbook. Owner-only endpoints for invites (registered + pending), a list endpoint that returns both, and a separate revoke path for each."
+---
+
+The shared-workbook endpoints. All are SaaS-only (404 in OSS) and gated behind `_require_workbook_owner` — only the owner of the workbook can manage its collaborator list.
+
+## POST /workbook/\{workbook_id\}/collaborators
+
+Invite a user by email. The response shape differs based on whether the invitee already has a GridOS account:
+
+- **Registered user** — a `workbook_collaborators` row is created immediately; returns `kind: "active"`.
+- **Unregistered email** — a `pending_invites` row is created; returns `kind: "pending"`. A Postgres trigger (`promote_pending_invites`) promotes the row into `workbook_collaborators` atomically when the invitee signs up.
+
+### Request
+
+<ParamField body="email" type="string" required>
+  The invitee's email address. Case-insensitive; stored lowercased.
+</ParamField>
+
+<ParamField body="role" type="string" default="editor">
+  Only `"editor"` is accepted in v1. The schema supports `"viewer"` but the write-endpoint gate isn't wired yet; sending `"viewer"` returns 400.
+</ParamField>
+
+### Response
+
+```json
+{
+  "ok": true,
+  "collaborator": {
+    "kind": "active",
+    "user_id": "uuid",
+    "email": "person@example.com",
+    "role": "editor"
+  }
+}
+```
+
+or
+
+```json
+{
+  "ok": true,
+  "collaborator": {
+    "kind": "pending",
+    "email": "newuser@example.com",
+    "role": "editor"
+  }
+}
+```
+
+### Errors
+
+| Status | When |
+| :--- | :--- |
+| 400 | Invalid email, role != `"editor"`, or self-invite |
+| 403 | Caller isn't the owner of the workbook |
+| 404 | Workbook doesn't exist, or OSS mode |
+
+## GET /workbook/\{workbook_id\}/collaborators
+
+Owner-facing list of every collaborator on this workbook (both active grants and pending invites).
+
+### Response
+
+```json
+{
+  "collaborators": [
+    {
+      "kind": "active",
+      "user_id": "uuid",
+      "email": "alice@example.com",
+      "role": "editor",
+      "invited_at": "2026-04-22T17:35:00Z",
+      "accepted_at": "2026-04-22T17:35:00Z"
+    },
+    {
+      "kind": "pending",
+      "id": "invite-uuid",
+      "email": "bob@example.com",
+      "role": "editor",
+      "invited_at": "2026-04-23T09:12:00Z"
+    }
+  ]
+}
+```
+
+Pending rows don't have a `user_id` yet (the invitee hasn't signed up) and use the pending-invite `id` as the revoke key.
+
+## DELETE /workbook/\{workbook_id\}/collaborators/\{user_id\}
+
+Revoke an **active** collaborator. No-op if the user isn't a collaborator on this workbook.
+
+## DELETE /workbook/\{workbook_id\}/pending-invites/\{invite_id\}
+
+Revoke a **pending** invite (the invitee hasn't signed up yet). Routes to a separate endpoint because the id-space is different — active rows key off the invitee's `user_id`, pending rows key off the `pending_invites.id` uuid.
+
+## GET /workbook/shared-with-me
+
+Workbooks that have been shared with the caller. Used by the landing page's "Shared with me" strip.
+
+### Response
+
+```json
+{
+  "workbooks": [
+    {
+      "id": "workbook-uuid",
+      "title": "Untitled workbook",
+      "updated_at": "2026-04-22T18:00:00Z",
+      "owner_email": "alice@example.com",
+      "role": "editor"
+    }
+  ]
+}
+```
+
+The list excludes any workbook the caller owns — a workbook where the caller appears in `workbook_collaborators` AND is also the owner (possible after a data repair) is filtered out so it doesn't show up twice.
+
+## Related
+
+- [Shared workbooks concept](/concepts/shared-workbooks) — the sharing model and what collaborators can do.
+- [Realtime collab](/concepts/realtime) — how cell writes and cursor positions sync between collaborators.

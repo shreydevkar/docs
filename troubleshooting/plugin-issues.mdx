@@ -1,0 +1,56 @@
+---
+title: "Plugin formula not working"
+description: "A guide to the sentinel strings GridOS returns when a plugin formula fails — missing credentials, rate limits, install gate, and more."
+---
+
+Plugin formulas return **sentinel strings** starting with `#` when something goes wrong, so the failure is visible in the cell rather than crashing the entire recalc. This page maps sentinels to their root causes.
+
+## `#NOT_INSTALLED: enable the 'slug' plugin in File > Marketplace`
+
+The plugin isn't installed for your account. Open the marketplace (gear → grid icon) and click **Install** on the plugin's card.
+
+**Why you see this** — once you've toggled anything in the marketplace, the install gate activates. Built-in formulas (`SUM`, `MAX`, `IF`, …) are never gated; only plugin-sourced ones. A brand-new user who has never touched the marketplace is treated as "no preferences yet" and sees every loaded plugin's formulas work — the gate activates the first time you toggle.
+
+## `#SHOPIFY_AUTH!` / `#STRIPE_AUTH!` / `#GITHUB_AUTH!`
+
+Credentials are missing or rejected.
+
+- Marketplace → **Configure** on the plugin's card → paste the required keys.
+- If you're in OSS mode, check your `.env` has the env vars the plugin expects (`SHOPIFY_ADMIN_TOKEN`, `STRIPE_SECRET_KEY`, `GITHUB_TOKEN`) and that you've restarted the server after editing `.env`.
+- For Shopify specifically, the admin token must have the `read_orders` and `read_products` scopes on the private app it came from.
+
+## `#*_OFFLINE!`
+
+Network is unreachable. The plugin can't hit the upstream API. Check your server's outbound network connectivity (on Render: the service should have outbound by default, but a misconfigured private network could break it).
+
+## `#SHOPIFY_429!` / `#STRIPE_429!` / `#GITHUB_RATE_LIMIT!`
+
+You've hit the upstream's rate limit. The 60s in-process cache each plugin uses usually prevents this but a workbook that has the same formula in hundreds of cells, or a tab that recalcs constantly, can still hit it.
+
+- **Shopify** — leaky-bucket, 40 req/sec burst with a 2 req/sec steady-state. Wait a minute and retry.
+- **Stripe** — 100 req/sec per account. Very unlikely to hit in a normal dashboard.
+- **GitHub** — 60 req/hr anonymous, 5000 req/hr with a PAT. Setting `TOKEN` via Configure lifts this 83x.
+
+## `#GITHUB_BAD_REPO!` / `#GITHUB_NOT_FOUND!`
+
+The `user/repo` string didn't parse, or the repo doesn't exist (or isn't accessible without a token). The parser accepts `"user/repo"` or a pasted GitHub URL (`"https://github.com/user/repo"`), but not other shapes. Common mistakes:
+
+- Trailing slash: `"user/repo/"` — gets trimmed fine.
+- Empty part: `"user/"` — fails with `#GITHUB_BAD_REPO!`.
+- Private repo with no token set: `#GITHUB_NOT_FOUND!` even though it exists. Set a `TOKEN` with access.
+
+## `#VALUE!` or `#PARSE_ERROR!` on a plugin formula
+
+These are the kernel's sentinels, not the plugin's. Usually means you've passed the wrong argument type — e.g. a cell reference to a text cell where the formula expects a number. The parser now preserves string-cell values (rather than silently coercing to 0) so the type mismatch surfaces as `#VALUE!` instead of a wrong number.
+
+## Plugin loaded but no formulas appear
+
+Check `GET /plugins` — it lists every discovered plugin, what formulas + agents it registered, and any `register()` errors. If a plugin's `register(kernel)` threw, the plugin shows up in the `errors` array with a traceback, and its formulas never landed in the registry.
+
+Common failures during development:
+
+- Forgot `def register(kernel):` — the loader skips plugins without it.
+- Import-time exception — boot log has `[plugins] ERROR in <slug>: ...` lines.
+- Syntax error in `plugin.py` — same place in the boot log.
+
+For rapid iteration, use the [developer plugin portal](/configuration/developer-plugin-portal) instead of restarting uvicorn every time.
