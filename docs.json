@@ -80,6 +80,7 @@
             "group": "Engine API (for agents)",
             "pages": [
               "api/engine-overview",
+              "api/authentication",
               "api/eval",
               "api/schema",
               "api/peek"

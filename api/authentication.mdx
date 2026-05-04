@@ -1,0 +1,124 @@
+---
+title: "Authentication — JWT or long-lived API keys"
+description: "GridOS accepts two credential types: short-lived Supabase JWTs (browser sign-in) and long-lived API keys (gridos_live_sk_) for external AI agents. Both go in the standard Authorization: Bearer header."
+---
+
+Every authenticated GridOS endpoint — including the entire [Engine API](/api/engine-overview) (`/eval`, `/schema`, `/peek`) — uses a single auth header:
+
+```
+Authorization: Bearer <credential>
+```
+
+The server accepts two credential types in that header. They are interchangeable for most purposes; the practical difference is lifetime and intended caller.
+
+| Credential | Format | Lifetime | Issued by | Use it when |
+| :--- | :--- | :--- | :--- | :--- |
+| **Supabase JWT** | `eyJ...` | ~1 hour | Browser sign-in at gridos.onrender.com | The GridOS web UI calls its own backend |
+| **API key** | `gridos_live_sk_...` | Until revoked | `POST /settings/api-keys` (browser only) | An external AI agent or developer tool calls GridOS |
+
+For programmatic / agent integration, use API keys.
+
+## Mint an API key
+
+API keys are minted from the **Settings → API Keys** page in the GridOS UI, or by hitting the endpoint directly while signed in via a JWT. The endpoint returns the full secret **once** in the response — the server stores only a sha256 hash and cannot return it again afterward.
+
+<Steps>
+  <Step title="Sign in to gridos.onrender.com">
+    Open the app in a browser, sign in with your account, and confirm you can see the workbook UI.
+  </Step>
+
+  <Step title="Mint a key">
+    Use the in-app Settings panel (Settings → API Keys → New Key), or call the endpoint directly:
+
+    ```bash
+    curl -X POST https://gridos.onrender.com/settings/api-keys \
+      -H "Authorization: Bearer <your-supabase-jwt>" \
+      -H "Content-Type: application/json" \
+      -d '{"name": "Claude Code integration"}'
+    ```
+
+    The response includes the full key — copy it now:
+
+    ```json
+    {
+      "id": "5e7f2c12-...",
+      "name": "Claude Code integration",
+      "key": "gridos_live_sk_abc123def456...",
+      "prefix": "gridos_live_sk_a",
+      "created_at": "2026-05-04T19:47:31.420Z"
+    }
+    ```
+
+    <Warning>
+      Save the `key` field somewhere secure (a password manager, a `.env` file, your team's secrets vault). The server never returns the full key again — if you lose it, you'll need to revoke and mint a new one.
+    </Warning>
+  </Step>
+
+  <Step title="Use the key">
+    Include the key as a Bearer token on every authenticated request. It works on every endpoint a JWT works on, including all three Engine API routes.
+
+    ```bash
+    curl -X POST https://gridos.onrender.com/eval \
+      -H "Authorization: Bearer gridos_live_sk_abc123def456..." \
+      -H "Content-Type: application/json" \
+      -d '{"formulas": [{"cell": "C4", "formula": "=A1/A2"}]}'
+    ```
+  </Step>
+</Steps>
+
+## List and revoke keys
+
+Inspect the keys you've minted (returns metadata only — never the secret):
+
+```bash
+curl https://gridos.onrender.com/settings/api-keys \
+  -H "Authorization: Bearer <your-supabase-jwt>"
+```
+
+```json
+{
+  "keys": [
+    {
+      "id": "5e7f2c12-...",
+      "name": "Claude Code integration",
+      "prefix": "gridos_live_sk_a",
+      "created_at": "2026-05-04T19:47:31.420Z",
+      "last_used_at": "2026-05-04T19:50:01.118Z",
+      "revoked_at": null
+    }
+  ]
+}
+```
+
+Revoke a key (soft-delete — the row stays for audit but the key stops working):
+
+```bash
+curl -X DELETE https://gridos.onrender.com/settings/api-keys/<key-id> \
+  -H "Authorization: Bearer <your-supabase-jwt>"
+```
+
+Revocation propagates within ~30 seconds at most (typically immediately, since the in-process auth cache is invalidated for the user as part of the revoke call).
+
+## Defense-in-depth notes
+
+A few details worth knowing for a production integration:
+
+- **Mint requires JWT, not API key.** A request authenticated with an existing API key cannot create new keys. This means a leaked key can't be used to manufacture replacement keys behind your back — you stay in control by virtue of being the only one who can sign in to the browser.
+- **Keys are sha256-hashed at rest.** The server never has the plaintext key after creation. If the database is compromised, attackers see hashes, not usable credentials.
+- **The `gridos_live_sk_` prefix is intentional.** Secret-scanning tools (GitHub's secret scanning, Gitleaks, TruffleHog) will flag accidentally committed keys based on the prefix pattern — same approach Stripe uses.
+- **Each request bumps `last_used_at`.** Stale keys you haven't touched in months show up clearly in the list endpoint, so you can prune them.
+
+## OSS / self-hosted
+
+In OSS mode (`SAAS_MODE=false`, the default for `git clone` installs), authentication is bypassed entirely — every request is treated as the local "oss" user and there is no JWT or API key flow. The GridOS server you deploy yourself trusts whatever client connects to it; secure access at the network layer (firewall, VPN, reverse-proxy auth) instead of via these credentials.
+
+API keys minted on the hosted gridos.onrender.com cannot be used against a self-hosted instance, and vice versa.
+
+<CardGroup cols={2}>
+  <Card title="Engine API overview" icon="map" href="/api/engine-overview">
+    What /eval, /schema, /peek do and the verify-before-commit recipe.
+  </Card>
+  <Card title="Connect your LLM keys" icon="key" href="/api-keys">
+    Separate flow for adding LLM provider keys (Gemini, Claude, GPT, etc.) — these are configured per-user in the UI, not via API keys here.
+  </Card>
+</CardGroup>
