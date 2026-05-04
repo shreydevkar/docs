@@ -1,0 +1,123 @@
+---
+title: "POST /eval — dry-run formulas without committing"
+description: "Evaluate a list of {cell, formula} pairs against the current workbook state. No writes, no LLM, no preview token. Returns Excel-style results or error sentinels per cell."
+---
+
+`POST /eval` runs each proposed formula through GridOS's AST kernel against the current workbook state and returns either the computed result or an Excel-style error sentinel. **Nothing is written.** The endpoint exists so external AI agents can verify their math before committing through `POST /grid/range` or `POST /agent/apply`.
+
+## Request
+
+<ParamField body="formulas" type="array" required>
+  An array of `{cell, formula}` objects. Each `cell` is an A1-notation address (e.g. `"C4"`); each `formula` is the formula expression (the leading `=` is optional and added automatically when missing). The cap is **500 formulas per request** — split larger batches.
+</ParamField>
+
+<ParamField body="sheet" type="string">
+  Name of the sheet to evaluate against. Defaults to the currently active sheet when omitted.
+</ParamField>
+
+## Response
+
+<ResponseField name="sheet" type="string">
+  The sheet the formulas were evaluated against.
+</ResponseField>
+
+<ResponseField name="results" type="array">
+  An array of `{cell, result, error}` objects in the same order as the request `formulas` array.
+
+  - `cell` — the A1 address from the request, echoed back.
+  - `result` — the computed value (number, boolean, string, or `null`) when evaluation succeeded. `null` when an error was returned.
+  - `error` — an Excel-style error sentinel (`"#DIV/0!"`, `"#PARSE_ERROR!"`, etc.) when evaluation failed. `null` on success.
+</ResponseField>
+
+## Error sentinels
+
+The `error` field uses the same string literals an LLM would expect from a real spreadsheet:
+
+| Sentinel | Meaning |
+| :--- | :--- |
+| `#DIV/0!` | Division by zero. |
+| `#VALUE!` | Type mismatch — for example, applying arithmetic to a non-numeric cell. |
+| `#VALUE! (Invalid Arguments)` | Wrong number or type of arguments to a function. |
+| `#PARSE_ERROR!` | The formula could not be parsed (mismatched parens, unknown token, etc.). |
+| `#REF!` | The formula references an invalid cell address. |
+| `#REF! (Invalid A1 notation)` | The `cell` field of the request was not a valid A1 address. |
+
+## HTTP errors
+
+| Status | Meaning |
+| :--- | :--- |
+| `404`  | The supplied `sheet` name does not exist in the workbook. |
+| `413`  | The `formulas` array exceeds the 500-entry cap. Split into batches. |
+
+## Example — happy path
+
+### Request
+
+```json
+POST /eval
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "formulas": [
+    { "cell": "C4", "formula": "=A1+A2" },
+    { "cell": "D4", "formula": "=SUM(A1:A10)" }
+  ],
+  "sheet": "Sheet1"
+}
+```
+
+### Response
+
+```json
+{
+  "sheet": "Sheet1",
+  "results": [
+    { "cell": "C4", "result": 30,  "error": null },
+    { "cell": "D4", "result": 150, "error": null }
+  ]
+}
+```
+
+## Example — surfacing an error
+
+If `A2` happens to be `0`, the same `=A1/A2` formula returns the error sentinel without any side effects on the workbook:
+
+```json
+POST /eval
+{
+  "formulas": [{ "cell": "B1", "formula": "=A1/A2" }]
+}
+```
+
+```json
+{
+  "sheet": "Sheet1",
+  "results": [
+    { "cell": "B1", "result": null, "error": "#DIV/0!" }
+  ]
+}
+```
+
+The agent can now decide to seed `A2` with a non-zero value, wrap the formula in `IFERROR(..., 0)`, or surface the issue back to the user — all without ever touching the live grid.
+
+## Per-cell error isolation
+
+A bad request shape for one formula does not fail the whole batch. If `cell` is not a valid A1 address, that one entry returns `"#REF! (Invalid A1 notation)"` while the other formulas evaluate normally:
+
+```json
+{
+  "results": [
+    { "cell": "not-a-cell", "result": null, "error": "#REF! (Invalid A1 notation)" },
+    { "cell": "A1",         "result": 42,   "error": null }
+  ]
+}
+```
+
+<Note>
+  `/eval` evaluates against the **current** workbook state. If two formulas in the same request reference each other, the second formula does not see the first as already-written — both evaluate against the pre-request state. Send dependent formulas as separate sequential requests when ordering matters, or commit the upstream formula first via `POST /grid/cell` and then dry-run the dependents.
+</Note>
+
+<Tip>
+  Combine `/eval` with [`/schema`](/api/schema) for the full **verify-before-commit** loop: scout structure, dry-run candidates, commit only the green ones. See the [Engine API overview](/api/engine-overview) for the full pattern.
+</Tip>

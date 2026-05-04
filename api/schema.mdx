@@ -1,0 +1,102 @@
+---
+title: "GET /schema — token-cheap workbook recon"
+description: "Returns every sheet's bounds, inferred column headers, and dominant data type per column. Designed to give external AI agents a structural overview in roughly 200 tokens instead of 30,000."
+---
+
+`GET /schema` returns a structural overview of every sheet in the current workbook: occupied bounds, the inferred header row, and the dominant data type for each column. It is the cheapest way for an external agent to learn what is in the workbook without fetching the full grid.
+
+## Why an agent would call this first
+
+Sending the entire workbook state to an LLM as JSON typically costs 30,000+ tokens on a moderately-populated workbook. `/schema` returns the same structural information in roughly 200 tokens. The agent can use the response to decide which sheets to look at, what columns to compute over, and what kind of data lives in each column — then call [`GET /peek`](/api/peek) for the specific cells it needs and [`POST /eval`](/api/eval) to test its proposed formulas.
+
+## Request
+
+This endpoint takes no parameters. It always returns every sheet in the caller's current workbook.
+
+```
+GET /schema
+Authorization: Bearer <token>
+```
+
+## Response
+
+<ResponseField name="active_sheet" type="string">
+  The name of the sheet currently selected in the UI. The default target for writes when a `sheet` parameter is omitted from other endpoints.
+</ResponseField>
+
+<ResponseField name="sheets" type="array">
+  One entry per sheet in the workbook. Each entry has the following shape:
+
+  - `name` — the sheet's display name.
+  - `active` — `true` if this sheet is the currently selected one in the UI.
+  - `rows` — the number of rows between the first and last occupied row (inclusive). `0` when the sheet is empty.
+  - `cols` — array of `{col, header, type}` objects, one per occupied column.
+  - `occupied_bounds` — `{first, last}` corners of the occupied rectangle in A1 notation, or `null` when the sheet is empty.
+</ResponseField>
+
+### Column object
+
+<ResponseField name="col" type="string">
+  The column letter in A1 notation (e.g. `"A"`, `"AA"`).
+</ResponseField>
+
+<ResponseField name="header" type="string | null">
+  The value of the cell in the first occupied row of this column, treated as the header. `null` when that cell is empty.
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  The dominant data type observed across all data rows (every occupied row except the header). One of:
+
+  - `"text"` — string values dominate
+  - `"number"` — int / float values dominate
+  - `"bool"` — boolean values dominate
+  - `"formula"` — at least half of the populated cells in the column carry a formula
+  - `"empty"` — no populated cells below the header
+
+  When a column has formulas in roughly half its data rows, `"formula"` wins regardless of the underlying value type — agents care more about whether a column is calculated than whether the calculated value is a number.
+</ResponseField>
+
+## Example
+
+### Request
+
+```bash
+curl https://gridos.onrender.com/schema \
+  -H "Authorization: Bearer $GRIDOS_TOKEN"
+```
+
+### Response
+
+```json
+{
+  "active_sheet": "Q1 Forecast",
+  "sheets": [
+    {
+      "name": "Q1 Forecast",
+      "active": true,
+      "rows": 24,
+      "cols": [
+        { "col": "A", "header": "Month",   "type": "text"    },
+        { "col": "B", "header": "Revenue", "type": "number"  },
+        { "col": "C", "header": "Growth",  "type": "formula" }
+      ],
+      "occupied_bounds": { "first": "A1", "last": "C24" }
+    },
+    {
+      "name": "Assumptions",
+      "active": false,
+      "rows": 0,
+      "cols": [],
+      "occupied_bounds": null
+    }
+  ]
+}
+```
+
+<Note>
+  `/schema` looks at the first occupied row to infer the header. Workbooks that don't follow the headers-on-row-1 convention will return the value of whatever sits in the first occupied row of each column as `header` — typically the first data point. For those workbooks, treat `header` as a sample rather than a label.
+</Note>
+
+<Tip>
+  The `cols` array only includes columns that have at least one populated cell in the occupied range. Sparse columns inside the bounds (e.g. all of column B is empty between an occupied A and C) appear with `header: null` and `type: "empty"`.
+</Tip>

@@ -1,0 +1,103 @@
+---
+title: "Engine API — call GridOS as a deterministic compute layer"
+description: "/eval, /schema, and /peek give external AI agents direct access to the GridOS AST kernel without going through the chat agent or UI. Use them to verify spreadsheet math, scout workbook structure, and fetch cell ranges in tens to hundreds of tokens."
+---
+
+The **Engine API** is GridOS's public surface for external AI agents and developer tools. It exposes the deterministic AST kernel directly — no LLM in the loop, no preview tokens, no chat history. Three endpoints cover the agent's three core needs:
+
+| Endpoint | Use it to |
+| :--- | :--- |
+| [`POST /eval`](/api/eval) | Dry-run a list of formulas and get back results or Excel-style errors. No commit. |
+| [`GET /schema`](/api/schema) | Get a token-cheap structural overview of every sheet — bounds, headers, column types. |
+| [`GET /peek`](/api/peek) | Fetch a specific cell range as CSV, TSV, or JSON. |
+
+These endpoints share GridOS's standard Bearer-token authentication (see [Connect your API keys](/api-keys)) and operate on the same kernel that backs the GridOS workspace UI. The same auth token reads and writes the same workbook the user sees in the browser.
+
+## Why these endpoints exist
+
+Every coding agent that handles spreadsheet data today faces the same problem: LLMs hallucinate math. To verify that an LLM-generated formula is sound, agent builders typically spin up a headless LibreOffice in a sandbox, recalculate, and parse the resulting `#DIV/0!` / `#REF!` errors. That round-trip costs a meaningful chunk of the agent's compute budget, and it bloats the LLM's context window with full grid JSON dumps.
+
+GridOS replaces that sandbox. Where headless LibreOffice takes seconds and tens of thousands of tokens, `/eval` returns deterministic results in tens of milliseconds and a single JSON response. `/schema` gives the agent a structural map of the workbook in roughly 200 tokens instead of 30,000+. `/peek` fetches just the cells the agent actually needs.
+
+## The verify-before-commit pattern
+
+The recommended pattern for an agent that wants to write to a GridOS workbook is **schema → decide → eval → write**:
+
+<Steps>
+  <Step title="Scout the workbook">
+    Call `GET /schema` to learn what sheets exist, where the data lives, and what types each column holds. This typically uses ~200 tokens of the agent's context.
+
+    ```bash
+    curl https://gridos.onrender.com/schema \
+      -H "Authorization: Bearer $GRIDOS_TOKEN"
+    ```
+  </Step>
+
+  <Step title="Optionally peek at concrete data">
+    If the agent needs sample values to make its decision (for example, to decide whether a column is dates or strings), call `GET /peek` with a small range.
+
+    ```bash
+    curl "https://gridos.onrender.com/peek?range=A1:D5&format=csv" \
+      -H "Authorization: Bearer $GRIDOS_TOKEN"
+    ```
+  </Step>
+
+  <Step title="Dry-run the proposed formulas">
+    Before writing, call `POST /eval` to make sure every formula resolves cleanly. The response splits results from Excel-style errors, so the agent can iterate without ever touching the live grid.
+
+    ```bash
+    curl -X POST https://gridos.onrender.com/eval \
+      -H "Authorization: Bearer $GRIDOS_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "formulas": [
+          {"cell": "C4", "formula": "=A1/A2"},
+          {"cell": "D4", "formula": "=SUM(B1:B10)"}
+        ]
+      }'
+    ```
+  </Step>
+
+  <Step title="Commit only when /eval is green">
+    If every result returns a non-null `result` (and a null `error`), the agent can safely commit using [`POST /grid/range`](/api/grid-cell) or, for a guarded preview-then-apply flow, [`POST /agent/apply`](/api/agent-apply).
+  </Step>
+</Steps>
+
+<Tip>
+  The Engine API endpoints never write to Supabase. They are pure read or pure compute. Anything an external agent commits must go through `/grid/cell`, `/grid/range`, or the agent preview-apply pipeline.
+</Tip>
+
+## Pre-write guardrails
+
+Even when an agent commits via the standard write endpoints, GridOS enforces two pre-write checks that block common LLM failure modes before they touch the grid:
+
+| Guardrail | Catches | Returns |
+| :--- | :--- | :--- |
+| **Empty-deps check** | A formula references a cell that is empty in the current workbook (and isn't being filled by the same write). Catches `#DIV/0!` from missing baselines. | `422` with the offending `{cell, formula, empty_refs}` list. |
+| **Text-cell-ref check** | A numeric formula dereferences a label/text cell — the column-alignment off-by-one bug. | `422` with `{cell, formula, bad_refs}`. |
+
+Both checks skip formulas wrapped in `IFERROR(...)`, `IFNA(...)`, `CONCATENATE(...)`, `CONCAT(...)`, `TEXTJOIN(...)`, and `SUMPRODUCT(...)` — those functions handle empty or non-numeric inputs by design. Both checks also skip references the same write is itself overwriting, so the agent's own self-corrections don't trigger false positives.
+
+<Note>
+  These guardrails apply to writes via `POST /agent/apply` (the agent preview-apply flow). `POST /grid/cell` and `POST /grid/range` are direct writes and skip them — use those when your external agent has already validated its formulas via `/eval`.
+</Note>
+
+## Authentication
+
+Every Engine API endpoint requires the same `Authorization: Bearer <token>` header used elsewhere in GridOS. In OSS / self-hosted mode the token is bypassed; in SaaS mode it must be a valid Supabase JWT.
+
+When sharing access with a design partner, mint a long-lived Supabase service token scoped to a specific user, or have the partner sign in to gridos.onrender.com and copy their session token from the in-app developer panel.
+
+## Reference
+
+<CardGroup cols={3}>
+  <Card title="POST /eval" icon="play" href="/api/eval">
+    Dry-run formulas. Returns results or Excel-style errors. The crown jewel.
+  </Card>
+  <Card title="GET /schema" icon="map" href="/api/schema">
+    Workbook structural overview in ~200 tokens.
+  </Card>
+  <Card title="GET /peek" icon="eye" href="/api/peek">
+    Fetch a range as CSV, TSV, or JSON.
+  </Card>
+</CardGroup>

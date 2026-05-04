@@ -77,6 +77,15 @@
         "tab": "API Reference",
         "groups": [
           {
+            "group": "Engine API (for agents)",
+            "pages": [
+              "api/engine-overview",
+              "api/eval",
+              "api/schema",
+              "api/peek"
+            ]
+          },
+          {
             "group": "Agent",
             "pages": [
               "api/agent-chat",

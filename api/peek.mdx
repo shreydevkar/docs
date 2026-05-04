@@ -1,0 +1,115 @@
+---
+title: "GET /peek — dense partial-grid fetch"
+description: "Fetch a rectangular cell range as CSV, TSV, or JSON. Designed for AI agents that want concrete cell values from a specific block of the grid without paying the token cost of fetching the full workbook."
+---
+
+`GET /peek` returns the contents of a rectangular cell range in one of three serialization formats. Use it when an agent has already scouted the workbook structure with [`/schema`](/api/schema) and needs the actual values from a specific block — for example, the first ten rows of a data table to decide what to compute over.
+
+## Request
+
+<ParamField query="range" type="string" required>
+  An A1-notation range of the form `A1:D10`. The two corners can be in either order — `D10:A1` is normalized to the same rectangle. Both letters and digits are required on each side; bare column or row references (e.g. `A:A`, `1:10`) are not accepted.
+</ParamField>
+
+<ParamField query="sheet" type="string">
+  Name of the sheet to read from. Defaults to the currently active sheet when omitted.
+</ParamField>
+
+<ParamField query="format" type="string" default="csv">
+  Serialization format. One of:
+
+  - `"csv"` — comma-separated, with RFC 4180-style quoting for fields containing commas, quotes, or newlines. Returns `Content-Type: text/csv`.
+  - `"tsv"` — tab-separated, no quoting. Returns `Content-Type: text/tab-separated-values`.
+  - `"json"` — JSON object with `sheet`, `range`, and `rows` (a 2-D array of values). Returns `Content-Type: application/json`.
+</ParamField>
+
+## Response
+
+The response shape depends on `format`. CSV and TSV return the serialized text directly with the appropriate `Content-Type`. JSON returns a structured object:
+
+<ResponseField name="sheet" type="string">
+  The sheet that was read.
+</ResponseField>
+
+<ResponseField name="range" type="string">
+  The normalized A1 range that was returned (corners ordered top-left to bottom-right).
+</ResponseField>
+
+<ResponseField name="rows" type="array">
+  A 2-D array (array of arrays) of cell values in row-major order. Empty cells are returned as the empty string `""`. Numeric cells are returned as JSON numbers; string cells as JSON strings; boolean cells as JSON booleans.
+</ResponseField>
+
+## HTTP errors
+
+| Status | Meaning |
+| :--- | :--- |
+| `400`  | `range` is not in `A1:D10` form, contains an invalid A1 notation, or `format` is not one of `csv`, `tsv`, `json`. |
+| `404`  | The supplied `sheet` does not exist in the workbook. |
+| `413`  | The range covers more than **1000 cells**. Narrow the range or split into multiple peeks. |
+
+## Examples
+
+### CSV (default)
+
+```bash
+curl "https://gridos.onrender.com/peek?range=A1:C3" \
+  -H "Authorization: Bearer $GRIDOS_TOKEN"
+```
+
+```
+Month,Revenue,Growth
+Jan,1000,
+Feb,1100,10%
+```
+
+Empty cells render as the empty string between the separators (note the trailing comma on the second row when `C2` is empty).
+
+### TSV
+
+```bash
+curl "https://gridos.onrender.com/peek?range=A1:B2&format=tsv" \
+  -H "Authorization: Bearer $GRIDOS_TOKEN"
+```
+
+```
+Month	Revenue
+Jan	1000
+```
+
+### JSON
+
+```bash
+curl "https://gridos.onrender.com/peek?range=A1:B2&format=json" \
+  -H "Authorization: Bearer $GRIDOS_TOKEN"
+```
+
+```json
+{
+  "sheet": "Q1 Forecast",
+  "range": "A1:B2",
+  "rows": [
+    ["Month", "Revenue"],
+    ["Jan",   1000]
+  ]
+}
+```
+
+## CSV escaping
+
+Fields containing a comma, double-quote, or newline are wrapped in double quotes, with internal double quotes doubled, following RFC 4180:
+
+| Cell value | CSV output |
+| :--- | :--- |
+| `Smith, John` | `"Smith, John"` |
+| `She said "hi"` | `"She said ""hi"""` |
+| `line 1\nline 2` | `"line 1\nline 2"` (the newline is preserved inside the quotes) |
+
+TSV does not escape — embed tabs at your own risk. JSON is the safest format for pipelines that need to handle arbitrary cell content.
+
+<Note>
+  `/peek` returns each cell's **evaluated value**, not its formula text. A cell containing `=SUM(A1:A10)` returns the computed sum; the formula itself is not exposed through `/peek`. Use [`POST /eval`](/api/eval) when you need to inspect formulas, or [`GET /api/workbook`](/api/save-load-export) for a full state dump that includes formula strings.
+</Note>
+
+<Tip>
+  Use the smallest possible range. The 1000-cell cap is a hard ceiling, but most agents do better with 50-100 cells per peek — that comfortably fits in any model's context and matches the granularity an LLM can actually reason about.
+</Tip>
